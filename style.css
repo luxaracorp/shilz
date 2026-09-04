@@ -1153,4 +1153,335 @@ body::after{
 @keyframes dragConic{ to{transform: rotate(1turn)} }
 .drag-icon{ position:relative; box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.5) inset }
 
+/* ── macOS Tahoe — Liquid Glass + Dopamine v2 ── */
+:root{
+  --spring: cubic-bezier(.16,1,.3,1);
+  --spring-bounce: cubic-bezier(.34,1.56,.64,1);
+  --spring-snappy: cubic-bezier(.32,.72,0,1);
+  --glass: rgba(22,22,24,0.58);
+  --glass-strong: rgba(28,28,30,0.72);
+  --glass-border: rgba(255,255,255,0.09);
+  --macos-blue: 10,132,255;
+  --macos-blue-raw: #0A84FF;
+}
+
+html{ scrollbar-color: rgba(255,255,255,0.14) transparent; scrollbar-width: thin }
+body{
+  background:
+    radial-gradient(1100px 620px at 50% -14%, rgba(255,255,255,0.055), transparent 66%),
+    radial-gradient(900px 700px at 88% 12%, rgba(99,102,241,0.055), transparent 62%),
+    radial-gradient(820px 620px at 12% 88%, rgba(255,255,255,0.028), transparent 64%),
+    linear-gradient(180deg, #08080A 0%, #0A0A0E 100%);
+  background-attachment: fixed;
+}
+
+.ambient-orb{
+  position:fixed; pointer-events:none; border-radius:50%; filter: blur(42px); opacity:0.55; will-change: transform;
+}
+.ambient-orb--1{
+  width:560px; height:560px; left:-120px; top:18vh;
+  background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.16), transparent 62%),
+              radial-gradient(circle at 70% 70%, rgba(255,255,255,0.045), transparent 58%);
+  animation: ambientDrift1 18s var(--ease-inout) infinite alternate;
+}
+.ambient-orb--2{
+  width:720px; height:520px; right:-160px; top:-80px;
+  background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.055), transparent 64%),
+              radial-gradient(circle at 70% 60%, rgba(120,119,198,0.09), transparent 62%);
+  animation: ambientDrift2 22s var(--ease-inout) infinite alternate;
+}
+.ambient-orb--3{
+  width:640px; height:420px; left:32%; bottom:-160px;
+  background: radial-gradient(circle at 50% 30%, rgba(255,255,255,0.038), transparent 64%),
+              radial-gradient(circle at 30% 70%, rgba(99,102,241,0.06), transparent 62%);
+  animation: ambientDrift3 20s var(--ease-inout) infinite alternate;
+  opacity:0.38;
+}
+@keyframes ambientDrift1{ 0%{transform:translate3d(0,0,0) scale(1)} 100%{transform:translate3d(18px,-14px,0) scale(1.04)} }
+@keyframes ambientDrift2{ 0%{transform:translate3d(0,0,0) scale(1)} 100%{transform:translate3d(-16px,12px,0) scale(1.03)} }
+@keyframes ambientDrift3{ 0%{transform:translate3d(0,0,0) scale(1)} 100%{transform:translate3d(10px,-10px,0) scale(1.05)} }
+
+.confetti-canvas{
+  position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:70;
+  display:block;
+}
+.cursor-glow{
+  position:fixed; width:420px; height:420px; margin:-210px; pointer-events:none; z-index:5;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.045), transparent 62%);
+  border-radius:50%; opacity:0; transform: translate3d(var(--mx, -9999px), var(--my, -9999px), 0);
+  transition: opacity .45s var(--spring);
+  will-change: transform, opacity;
+  mix-blend-mode: plus-lighter;
+}
+@media (pointer: fine){
+  body.has-cursor-glow .cursor-glow{ opacity:1 }
+}
+
+.spotlight{
+  position:fixed; top:14px; left:50%; transform: translateX(-50%) translateY(-8px);
+  z-index:35; pointer-events:none; opacity:0;
+  transition: opacity .28s var(--spring), transform .34s var(--spring);
+}
+.spotlight.is-visible{ opacity:1; transform: translateX(-50%) translateY(0) }
+.spotlight-inner{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:7px 12px 7px 10px;
+  background: rgba(30,30,32,0.84);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:999px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.08) inset;
+  font-size:12px; color: rgba(255,255,255,0.82); letter-spacing:-0.01em;
+}
+.spotlight-icon{ width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background: rgba(255,255,255,0.09); color:#fff; flex:0 0 auto }
+.spotlight kbd{
+  display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px;
+  background: rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.12); border-bottom-color: rgba(255,255,255,0.16);
+  border-radius:6px; font-family: Inter, sans-serif; font-size:11px; font-weight:600; color:#fff; line-height:1;
+}
+
+.traffic{
+  display:flex; align-items:center; gap:7px; margin-right:10px; flex:0 0 auto;
+}
+.traffic-dot{
+  width:12px; height:12px; border-radius:50%; position:relative;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 0.5px 0.5px rgba(0,0,0,0.28), 0 0 0 0.5px rgba(0,0,0,0.08) inset;
+  transition: filter .18s, transform .18s var(--spring-bounce);
+}
+.traffic-dot--red{ background: radial-gradient(100% 100% at 30% 28%, #ff8a8a, #ff5f56 52%, #e0443e 100%) }
+.traffic-dot--yellow{ background: radial-gradient(100% 100% at 30% 28%, #ffeaa0, #ffbd2e 52%, #dea123 100%) }
+.traffic-dot--green{ background: radial-gradient(100% 100% at 30% 28%, #a8ffbb, #28c940 52%, #1aab29 100%) }
+.traffic-dot::after{
+  content:""; position:absolute; inset:0; border-radius:50%;
+  background: radial-gradient(60% 45% at 30% 26%, rgba(255,255,255,0.55), transparent 62%);
+  opacity:0.9;
+}
+.topbar:hover .traffic-dot{ filter: brightness(1.06) saturate(1.05) }
+.traffic-dot:active{ transform: scale(0.92) }
+
+/* ── Topbar macOS vibrancy ── */
+.topbar{
+  background: rgba(16,16,18,0.52);
+  backdrop-filter: blur(26px) saturate(1.75);
+  -webkit-backdrop-filter: blur(26px) saturate(1.75);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.045) inset, 0 10px 28px rgba(0,0,0,0.14);
+}
+.topbar-inner{ padding: 10px 18px; gap:14px }
+.brand{ gap:11px }
+.brand-mark{
+  width:30px; height:30px; border-radius:9px;
+  background: #1A1F33 url("icon.png") center / 74% no-repeat;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.42) inset, 0 0.5px 0 rgba(255,255,255,0.18) inset, 0 6px 14px rgba(0,0,0,0.26), 0 1px 3px rgba(0,0,0,0.22);
+}
+.brand-type{ font-weight:640; font-size:14.7px; letter-spacing:-0.03em; }
+.brand-sub{
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
+  border-color: rgba(255,255,255,0.09);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+  backdrop-filter: blur(8px);
+}
+
+/* ── Composer liquid glass ── */
+.composer{
+  background: linear-gradient(180deg, rgba(28,28,30,0.82), rgba(22,22,24,0.78));
+  backdrop-filter: blur(32px) saturate(1.85);
+  -webkit-backdrop-filter: blur(32px) saturate(1.85);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 24px;
+  box-shadow: 0 28px 64px rgba(0,0,0,0.52), 0 1px 0 rgba(255,255,255,0.09) inset, 0 0 0 0.5px rgba(255,255,255,0.04) inset, 0 0 36px rgba(120,119,198,0.06);
+}
+.composer::before{ display:none }
+.composer::after{ opacity:0.72; background: radial-gradient(640px 140px at 50% -24%, rgba(255,255,255,0.07), transparent 72%) }
+.prompt-input{
+  font-size:15.2px; letter-spacing:-0.014em; font-weight:400;
+}
+.prompt-input::placeholder{ color: rgba(255,255,255,0.34); font-weight:400 }
+.composer:focus-within{
+  border-color: rgba(var(--macos-blue), 0.22);
+  box-shadow: 0 0 0 0.5px rgba(var(--macos-blue), 0.28), 0 0 0 4px rgba(var(--macos-blue), 0.10), 0 28px 64px rgba(0,0,0,0.52), 0 1px 0 rgba(255,255,255,0.09) inset;
+  transform: translateY(-1px);
+}
+.composer-controls{
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  border-top-color: rgba(255,255,255,0.055);
+}
+.generate-btn{
+  height:40px; padding:0 14px 0 15px; gap:9px;
+  background: #fff; color:#0A0A0B;
+  border-color: #fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.76) inset, 0 0 0 0.5px rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.14);
+  transition: transform .18s var(--spring-bounce), box-shadow .22s var(--spring), background .18s, filter .18s;
+}
+.generate-btn:hover{ filter: brightness(1.02); box-shadow: 0 1px 0 rgba(255,255,255,0.82) inset, 0 6px 18px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.04) }
+.generate-btn:active{ transform: scale(0.98) }
+.generate-btn-icon{ background: #0A0A0B; box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset }
+.generate-btn.is-loading{ animation: generatePulse 1.1s var(--ease-inout) infinite }
+@keyframes generatePulse{ 0%,100%{box-shadow: 0 1px 0 rgba(255,255,255,0.76) inset, 0 4px 14px rgba(0,0,0,0.14)} 50%{box-shadow: 0 1px 0 rgba(255,255,255,0.76) inset, 0 4px 20px rgba(99,102,241,0.18), 0 0 0 4px rgba(99,102,241,0.08)} }
+.attach-btn{
+  background: rgba(255,255,255,0.07);
+  backdrop-filter: blur(12px);
+  border-color: rgba(255,255,255,0.09);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 2px 8px rgba(0,0,0,0.14);
+}
+.attach-btn.has-file{
+  background:#fff; color:#0A0A0B; border-color:#fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 12px rgba(0,0,0,0.14);
+  animation: attachPop .42s var(--spring-bounce);
+}
+@keyframes attachPop{ 0%{transform:scale(0.92)} 60%{transform:scale(1.06)} 100%{transform:scale(1)} }
+.pill{
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+}
+.pill[aria-checked="true"]{
+  background:#fff; color:#0A0A0B; border-color:#fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.72) inset, 0 4px 14px rgba(255,255,255,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+.pill:hover:not([aria-checked="true"]){ background: rgba(255,255,255,0.085); border-color: rgba(255,255,255,0.12); transform: translateY(-0.5px) }
+.pill:active{ transform: scale(0.97) }
+
+/* ── Cards dopamine ── */
+.gen-card{ border-radius: 20px; overflow:hidden }
+.gen-card-media{ background: radial-gradient(760px 360px at 50% 0%, rgba(255,255,255,0.05), transparent 68%), radial-gradient(560px 380px at 92% 88%, rgba(99,102,241,0.06), transparent 62%), #0B0B0D }
+.gen-card-shimmer{
+  background:
+    linear-gradient(100deg, transparent 28%, rgba(255,255,255,0.09) 50%, transparent 72%),
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 44%),
+    #0F0F11;
+}
+.btn--primary{
+  background:#fff; color:#0A0A0B; border-color:#fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.72) inset, 0 2px 10px rgba(0,0,0,0.14);
+  transition: transform .16s var(--spring-bounce), box-shadow .2s, background .18s;
+}
+.btn--primary:hover{ transform: translateY(-0.5px); box-shadow: 0 1px 0 rgba(255,255,255,0.78) inset, 0 6px 16px rgba(0,0,0,0.18) }
+.btn--primary:active{ transform: scale(0.98) }
+.btn--ghost{ backdrop-filter: blur(12px); background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.10) }
+.btn--ghost:hover{ background: rgba(255,255,255,0.12) }
+
+.sparkle{
+  position:absolute; width:10px; height:10px; pointer-events:none; z-index:3;
+  background: radial-gradient(circle at 50% 50%, #fff 0%, #fff 28%, rgba(255,255,255,0) 62%);
+  border-radius:50%;
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.9));
+  animation: sparklePop .62s var(--spring-bounce) both;
+}
+@keyframes sparklePop{ 0%{transform:scale(0) rotate(0deg); opacity:0} 40%{opacity:1} 100%{transform:scale(1.4) rotate(180deg); opacity:0} }
+.sparkle--star{
+  background: none; width:14px; height:14px;
+}
+.sparkle--star::before, .sparkle--star::after{
+  content:""; position:absolute; inset:0; background:#fff; border-radius:1px;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.9));
+}
+
+.gen-card.is-success{ animation: cardSuccess .62s var(--spring-bounce) }
+@keyframes cardSuccess{ 0%{transform:scale(0.98)} 45%{transform:scale(1.012)} 100%{transform:scale(1)} }
+.gen-card-media img.is-loaded{ animation: imgReveal .68s var(--spring) both }
+@keyframes imgReveal{ from{filter: blur(14px) saturate(0.92) brightness(0.98); opacity:0; transform: scale(1.03)} to{filter:none; opacity:1; transform:scale(1)} }
+
+/* ── History macOS Finder sidebar ── */
+.history-panel{
+  background: rgba(22,22,24,0.72);
+  backdrop-filter: blur(30px) saturate(1.85);
+  -webkit-backdrop-filter: blur(30px) saturate(1.85);
+  border-left: 0.5px solid rgba(255,255,255,0.08);
+  box-shadow: -20px 0 64px rgba(0,0,0,0.48), -1px 0 0 rgba(255,255,255,0.04) inset;
+}
+.history-head{
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent);
+  border-bottom-color: rgba(255,255,255,0.06);
+  backdrop-filter: blur(12px);
+}
+.history-item{
+  background: rgba(255,255,255,0.035);
+  backdrop-filter: blur(10px);
+  border-color: rgba(255,255,255,0.06);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 18px rgba(0,0,0,0.14);
+}
+.history-item:hover{
+  background: rgba(255,255,255,0.055);
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 10px 24px rgba(0,0,0,0.20);
+  transform: translateY(-1px) scale(1.005);
+}
+
+/* ── Lightbox Quick Look ── */
+.lightbox-backdrop{
+  background: rgba(8,8,12,0.72);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+}
+.lightbox-img{
+  box-shadow: 0 32px 80px rgba(0,0,0,0.62), 0 0 0 0.5px rgba(255,255,255,0.08), 0 1px 0 rgba(255,255,255,0.10) inset;
+  border-color: rgba(255,255,255,0.09);
+}
+.lightbox-btn--icon{
+  background: rgba(255,255,255,0.10);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border-color: rgba(255,255,255,0.12);
+}
+
+/* ── Toast Notification Center ── */
+.toast{
+  background: rgba(32,32,34,0.84);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.08) inset;
+  font-weight:500; letter-spacing:-0.01em;
+}
+.toast--error{
+  background: rgba(42,18,18,0.88);
+  border-color: rgba(239,68,68,0.18);
+}
+
+/* ── Key indicator macOS ── */
+.key-indicator{
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(14px);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 14px rgba(0,0,0,0.14);
+}
+.key-dot.is-ok{ box-shadow: 0 0 0 1px rgba(34,197,94,0.14) inset, 0 0 12px rgba(34,197,94,0.42), 0 0 0 4px rgba(34,197,94,0.08) }
+
+/* ── Hover lift universal ── */
+.icon-btn{ backdrop-filter: blur(14px); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 12px rgba(0,0,0,0.10) }
+.icon-btn:hover{ transform: translateY(-0.5px); box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 8px 18px rgba(0,0,0,0.16) }
+.icon-btn:active{ transform: scale(0.98) }
+.text-btn{ backdrop-filter: blur(10px) }
+
+/* ── Scrollbar macOS ── */
+::-webkit-scrollbar{ width:8px; height:8px }
+::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.06); border-radius:999px }
+::-webkit-scrollbar-track{ background: transparent }
+
+/* ── Focus macOS blue ── */
+:focus-visible{ outline: 2px solid rgba(var(--macos-blue), 0.92); outline-offset:2px; box-shadow: 0 0 0 4px rgba(var(--macos-blue), 0.18), 0 0 14px rgba(var(--macos-blue), 0.18) }
+
+/* ── Composer footnote pill ── */
+.composer-footnote{ background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.04); border-radius:999px; display:inline-flex; margin:6px auto 0; padding:4px 10px; backdrop-filter: blur(8px) }
+
+/* ── Ref preview glass ── */
+.ref-preview{
+  background: rgba(28,28,30,0.72);
+  backdrop-filter: blur(18px) saturate(1.6);
+  border-color: rgba(255,255,255,0.09);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+
+/* ── Mobile traffic hide ── */
+@media (max-width: 760px){
+  .traffic{ display:none }
+  .cursor-glow{ display:none }
+  .spotlight{ display:none }
+  .ambient-orb{ opacity:0.38 }
+}
+
 
