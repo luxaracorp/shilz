@@ -250,7 +250,7 @@
     if (countEl){
       const origRender = renderHistory;
       window._renderHistoryBump = ()=>{
-        countEl.animate?.([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:320, easing:"cubic-bezier(.34,1.56,.64,1)"});
+        countEl.animate?.([{transform:"scale(1)"},{transform:"scale(1.08)"},{transform:"scale(1)"}],{duration:320, easing:"cubic-bezier(.22,1,.36,1)"});
       };
     }
 
@@ -350,20 +350,20 @@
       const count = opts.count||42;
       const x = opts.x ?? window.innerWidth/2;
       const y = opts.y ?? window.innerHeight*0.42;
-      const colors = ["#fff","#e4e4ff","#c0c8ff","#9898ff","#ffffff"];
+      const colors = ["#E8D9B8","#F7F2E6","#D8C9A8","#C9B895","#fffaf0"];
       for(let i=0;i<count;i++){
-        const angle = (Math.PI*2 * i/count) + (Math.random()*0.6-0.3);
-        const speed = 4 + Math.random()*7;
-        const size = 4 + Math.random()*5;
+        const angle = (Math.PI*2 * i/count) + (Math.random()*0.5-0.25);
+        const speed = 2.2 + Math.random()*4.2;
+        const size = 3 + Math.random()*4;
         particles.push({
           x, y,
-          vx: Math.cos(angle)*speed + (Math.random()-0.5)*2,
-          vy: Math.sin(angle)*speed - Math.random()*3 - 2,
-          size, rot: Math.random()*360, vr: (Math.random()-0.5)*14,
+          vx: Math.cos(angle)*speed + (Math.random()-0.5)*1.2,
+          vy: Math.sin(angle)*speed - Math.random()*1.8 - 1.2,
+          size, rot: Math.random()*360, vr: (Math.random()-0.5)*6,
           color: colors[Math.floor(Math.random()*colors.length)],
-          life: 1, decay: 0.012 + Math.random()*0.014,
-          shape: Math.random()<0.5 ? "rect":"circle",
-          gravity: 0.22 + Math.random()*0.14
+          life: 1, decay: 0.008 + Math.random()*0.009,
+          shape: Math.random()<0.62 ? "rect":"circle",
+          gravity: 0.14 + Math.random()*0.08
         });
       }
       if (!confettiRunning) loop();
@@ -429,7 +429,7 @@
         const ctx = new (window.AudioContext||window.webkitAudioContext)();
         if (!ctx) return;
         const o=ctx.createOscillator(), g=ctx.createGain();
-        o.type="sine"; o.frequency.value=720 + Math.random()*120;
+        o.type="sine"; o.frequency.value=320 + Math.random()*120;
         g.gain.value=0.04 * intensity;
         o.connect(g); g.connect(ctx.destination);
         o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.12);
@@ -457,23 +457,23 @@
     window._dopamineSuccess = (cardEl)=>{
       const rect = cardEl?.getBoundingClientRect();
       const cx = rect ? rect.left + rect.width/2 : window.innerWidth/2;
-      const cy = rect ? rect.top + rect.height*0.38 : window.innerHeight/2;
-      burstConfetti({x: cx, y: cy, count: 44});
-      sparkleBurst(cardEl || document.body, 8);
-      hapticPop(1.1);
+      const cy = rect ? rect.top + rect.height*0.30 : window.innerHeight/2;
+      burstConfetti({x: cx, y: cy, count: 28});
+      sparkleBurst(cardEl || document.body, 6);
+      hapticPop(0.7);
       if (cardEl){
         cardEl.classList.add("is-success");
-        cardEl.animate?.([{transform:"scale(0.99)"},{transform:"scale(1.015)"},{transform:"scale(1)"}],{duration:520, easing:"cubic-bezier(.34,1.56,.64,1)"});
+        cardEl.animate?.([{transform:"scale(0.995)", filter:"brightness(1)"},{transform:"scale(1.008)", filter:"brightness(1.03)"},{transform:"scale(1)", filter:"brightness(1)"}],{duration:720, easing:"cubic-bezier(.22,1,.36,1)"});
         const img = cardEl.querySelector("img");
         if (img){
-          img.animate?.([{filter:"brightness(1.08) saturate(1.08)"},{filter:"none"}],{duration:420, easing:"ease-out"});
+          img.animate?.([{filter:"brightness(1.04) saturate(1.04)", transform:"scale(1.01)"},{filter:"none", transform:"scale(1)"}],{duration:560, easing:"cubic-bezier(.22,1,.36,1)"});
         }
       }
     };
 
     document.querySelectorAll(".traffic-dot").forEach(d=>{
       d.addEventListener("click", ()=>{
-        d.animate?.([{transform:"scale(0.92)"},{transform:"scale(1.06)"},{transform:"scale(1)"}],{duration:320, easing:"cubic-bezier(.34,1.56,.64,1)"});
+        d.animate?.([{transform:"scale(0.92)"},{transform:"scale(1.04)"},{transform:"scale(1)"}],{duration:320, easing:"cubic-bezier(.22,1,.36,1)"});
         hapticPop(0.6);
       });
     });
@@ -1612,7 +1612,7 @@
       historyGrid.appendChild(el);
     });
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && history.length){
-      historyCount.animate?.([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:340, easing:"cubic-bezier(.34,1.56,.64,1)"});
+      historyCount.animate?.([{transform:"scale(1)"},{transform:"scale(1.08)"},{transform:"scale(1)"}],{duration:340, easing:"cubic-bezier(.22,1,.36,1)"});
       historyGrid.animate?.([{opacity:0.96},{opacity:1}],{duration:220, easing:"ease-out"});
     }
   }

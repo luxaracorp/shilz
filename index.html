@@ -67,23 +67,31 @@
     <!-- Workspace -->
     <main class="workspace" id="workspace" role="main">
       <div class="conversation" id="conversation" aria-live="polite" aria-label="Conversation">
-        <!-- Hero -->
+        <!-- Hero — Atelier -->
         <section class="hero" id="hero" aria-label="Welcome">
+          <div class="hero-meta">
+            <span class="hero-kicker">Atelier — Nano Banana Pro</span>
+            <span class="hero-rule" aria-hidden="true"></span>
+            <span class="hero-credit">Oxyy · 60 cr / image</span>
+          </div>
           <div class="hero-eyebrow">
             <span class="eyebrow-dot" aria-hidden="true"></span>
-            Nano Banana Pro · 60 credits/image · Oxyy
+            <span class="eyebrow-text">Available now — image studio for obsessives</span>
+            <span class="eyebrow-hairline" aria-hidden="true"></span>
           </div>
           <h1 class="hero-title" aria-label="Hello, Shilo.">
-            <span class="hero-title-line hero-title-line-1">Hello, Shilo.</span>
+            <span class="hero-title-line hero-title-line-1"><span class="hero-title-hello">Hello,</span> <em class="hero-title-name">Shilo.</em></span>
+            <span class="hero-title-line hero-title-line-2">What are we <i>creating</i> today?</span>
           </h1>
-          <p class="hero-subtitle">What are we creating today?</p>
+          <p class="hero-subtitle">A private studio for <em>image</em> — brutal light, quiet material, perfect surface. Drop an image or start typing.</p>
+          <div class="hero-ornament" aria-hidden="true"><span></span><i>✦</i><span></span></div>
           <div class="hero-suggestions" id="heroSuggestions" role="group" aria-label="Try a prompt">
-            <button class="suggestion" type="button" data-prompt="A serene Japanese tea house at dawn, soft mist over a koi pond, muted film grain, ultra-detailed, natural light">Tea house at dawn — mist &amp; koi</button>
-            <button class="suggestion" type="button" data-prompt="Minimalist product shot of a matte black ceramic vase on a limestone plinth, studio lighting, soft shadow, 8k detail">Matte vase — studio plinth</button>
-            <button class="suggestion" type="button" data-prompt="Editorial portrait of a woman in a cream cashmere coat, overcast Paris street, shallow depth of field, cinematic">Cashmere portrait — Paris</button>
-            <button class="suggestion" type="button" data-prompt="Futuristic brutalist library interior, warm wood and concrete, volumetric light through tall windows, serene">Brutalist library — light</button>
+            <button class="suggestion" type="button" data-prompt="A serene Japanese tea house at dawn, soft mist over a koi pond, muted film grain, ultra-detailed, natural light"><span>Tea house at dawn</span><em>mist &amp; koi — film grain</em></button>
+            <button class="suggestion" type="button" data-prompt="Minimalist product shot of a matte black ceramic vase on a limestone plinth, studio lighting, soft shadow, 8k detail"><span>Matte vase</span><em>studio plinth — limestone</em></button>
+            <button class="suggestion" type="button" data-prompt="Editorial portrait of a woman in a cream cashmere coat, overcast Paris street, shallow depth of field, cinematic"><span>Cashmere portrait</span><em>Paris — overcast</em></button>
+            <button class="suggestion" type="button" data-prompt="Futuristic brutalist library interior, warm wood and concrete, volumetric light through tall windows, serene"><span>Brutalist library</span><em>warm wood — concrete</em></button>
           </div>
-          <p class="hero-hint">Drop an image, paste from clipboard, or start typing below.</p>
+          <p class="hero-hint">Drop image · paste <kbd>⌘</kbd><kbd>V</kbd> · <span>or describe</span></p>
         </section>
 
         <!-- Messages mount here -->
