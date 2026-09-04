@@ -2224,7 +2224,7 @@
     while(Date.now()-start < maxWaitMs){
       await new Promise(r=> setTimeout(r, interval));
       try{
-        const resp = await fetch(`${BASE_URL}/videos/generations/${encodeURIComponent(jobId)}`, { headers: {} });
+        const resp = await fetch(`${BASE_URL}/videos/generations?jobId=${encodeURIComponent(jobId)}`, { headers: {} });
         if(!resp.ok){
           if(resp.status===404) return { error:"Video job not found.", videoUrl:null };
           const txt=await resp.text().catch(()=> "");

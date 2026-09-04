@@ -66,9 +66,7 @@ function pickKeyOrder(keys) {
     roundRobinIndex = (roundRobinIndex + 1) % available.length;
   }
   for (const c of cooling) order.push(c.idx);
-  if (!order.length) {
-    keys.forEach((_, idx) => order.push(idx));
-  }
+  if (!order.length) keys.forEach((_, idx) => order.push(idx));
   return order;
 }
 
@@ -120,9 +118,7 @@ export async function onRequestPost(context) {
   if (duration != null && (!Number.isFinite(duration) || duration < 1 || duration > 30)) {
     return jsonError("Duration must be between 1 and 30 seconds.", 400);
   }
-  const aspect = body.aspect_ratio || body.aspectRatio;
-  if (aspect && !["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","2:3","3:2","9:16","16:9","1:1","4:3","3:4"].includes(String(aspect))) {
-  }
+
   const order = pickKeyOrder(keys);
   let lastError = null;
   let lastStatus = 500;
@@ -131,9 +127,6 @@ export async function onRequestPost(context) {
   for (let attempt = 0; attempt < order.length; attempt++) {
     const keyIdx = order[attempt];
     const key = keys[keyIdx];
-    const cdUntil = keyCooldowns.get(key) || 0;
-    if (cdUntil > Date.now() && attempt < keys.length - 1) {
-    }
 
     let resp;
     try {
@@ -172,54 +165,18 @@ export async function onRequestPost(context) {
     }
 
     if (resp.ok) {
-      const jobId = respJson?.id || respJson?.job_id || respJson?.task_id || respJson?.data?.id;
-      const status = respJson?.status || respJson?.data?.status;
-      const videoUrl = respJson?.video_url || respJson?.videoUrl || respJson?.data?.video_url || respJson?.url || respJson?.data?.url;
-
-      if (jobId && (status === "queued" || status === "in_progress" || status === "processing" || status === "running" || !videoUrl)) {
-        const pollResult = await pollVideoJob(jobId, key, retryAfterMs);
-        if (pollResult.ok) {
-          const successBody = JSON.stringify({
-            ...pollResult.data,
-            _shilo_proxy: { keyIndex: keyIdx + 1, totalKeys: keys.length, model }
-          });
-          const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": model });
-          if (retryAfterMs) outHeaders.set("retry-after", String(Math.ceil(retryAfterMs/1000)));
-          keyCooldowns.delete(key);
-          if (idempotencyKey) {
-            idempotencyCache.set(idempotencyKey, { body: successBody, status: 200, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
-          }
-          return new Response(successBody, { status: 200, headers: outHeaders });
-        } else {
-          const sanitized = sanitizeMessage(pollResult.error || "Video generation failed.");
-          const statusCode = pollResult.status || 500;
-          const shouldRetry = RETRYABLE_STATUSES.has(statusCode) && !isPermanentValidationError(statusCode, sanitized);
-          if (shouldRetry && attempt < order.length - 1) {
-            const cd = retryAfterMs ? retryAfterMs + 800 : (statusCode === 429 ? 45_000 : statusCode === 402 ? 45_000 : 18_000);
-            setCooldown(key, cd);
-            lastError = { message: sanitized, status: statusCode, raw: respText };
-            lastStatus = statusCode;
-            lastErrorBody = respText;
-            await new Promise(r => setTimeout(r, 400 + Math.random()*400));
-            continue;
-          }
-          const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-          const errBody = JSON.stringify({ error: { message: sanitized || "Video generation failed.", code: pollResult.code || "video_failed", status: statusCode } });
-          return new Response(errBody, { status: statusCode >= 400 ? statusCode : 500, headers: outHeaders });
-        }
-      }
-
       let successJson = respJson;
       if (successJson && typeof successJson === "object") {
         successJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model };
       }
-      const successBody = JSON.stringify(successJson || { video_url: videoUrl, id: jobId });
+      const successBody = JSON.stringify(successJson || {});
       const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": model });
-      if (idempotencyKey) {
-        idempotencyCache.set(idempotencyKey, { body: successBody, status: 200, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
-      }
+      if (retryAfterMs) outHeaders.set("retry-after", String(Math.ceil(retryAfterMs/1000)));
       keyCooldowns.delete(key);
-      return new Response(successBody, { status: 200, headers: outHeaders });
+      if (idempotencyKey) {
+        idempotencyCache.set(idempotencyKey, { body: successBody, status: resp.status, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
+      }
+      return new Response(successBody, { status: resp.status, headers: outHeaders });
     }
 
     const errMsgRaw = respJson?.error?.message || respJson?.message || respText || `Request failed with ${resp.status}`;
@@ -266,62 +223,82 @@ export async function onRequestPost(context) {
     finalMsg = "Could not reach Oxyy. Check your connection and try again.";
   }
   const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-  if (lastError && getRetryAfterMs(new Headers({ "retry-after": String(lastError.retryDelay || "") }))) {
-  }
   const bodyOut = JSON.stringify({ error: { message: finalMsg, code: lastError?.code || "proxy_failed", status: finalStatus, proxy: { attempted: order.length, totalKeys: keys.length } } });
   return new Response(bodyOut, { status: finalStatus >= 400 ? finalStatus : 500, headers });
 }
 
-async function pollVideoJob(jobId, key, initialRetryAfter) {
-  const pollUrl = `${OXYY_VIDEO_URL}/${encodeURIComponent(jobId)}`;
-  const maxWaitMs = 300_000;
-  const start = Date.now();
-  let interval = 5000;
-  if (initialRetryAfter && initialRetryAfter > 1000 && initialRetryAfter < 15000) interval = Math.min(initialRetryAfter, 5000);
+export async function onRequestGet(context) {
+  const { request, env, params } = context;
+  const keys = parseKeys(env || {});
+  if (!keys.length) return jsonError("Oxyy server configuration is missing.", 503);
 
-  while (Date.now() - start < maxWaitMs) {
-    await new Promise(r => setTimeout(r, interval));
-    let resp;
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const jobId = params?.id || params?.jobId || url.searchParams.get("jobId") || url.searchParams.get("id") || url.searchParams.get("job_id") || pathParts[pathParts.length - 1];
+  if (!jobId || jobId === "generations") return jsonError("Missing job ID for polling. Use ?jobId=xxx", 400);
+
+  const order = pickKeyOrder(keys);
+  let lastError = null;
+  let lastStatus = 500;
+
+  for (let attempt = 0; attempt < order.length; attempt++) {
+    const keyIdx = order[attempt];
+    const key = keys[keyIdx];
     try {
-      resp = await fetch(pollUrl, {
+      const resp = await fetch(`${OXYY_VIDEO_URL}/${encodeURIComponent(jobId)}`, {
         method: "GET",
         headers: { "authorization": `Bearer ${key}` }
       });
-    } catch (e) {
-      interval = Math.min(interval + 1000, 8000);
-      continue;
-    }
-    if (resp.status === 404) {
-      const txt = await resp.text().catch(() => "");
-      return { ok: false, error: sanitizeMessage(txt) || "Video job not found.", status: 404, code: "not_found" };
-    }
-    let data = null;
-    let text = "";
-    try {
       const ct = resp.headers.get("content-type") || "";
-      if (ct.includes("application/json")) data = await resp.json();
-      else { text = await resp.text(); try { data = JSON.parse(text); } catch {} }
-    } catch {}
-    const status = data?.status || data?.data?.status || "";
-    if (status === "completed" || status === "succeeded" || status === "success") {
-      const videoUrl = data?.video_url || data?.videoUrl || data?.url || data?.data?.video_url || data?.data?.url || data?.output?.[0]?.url;
-      if (videoUrl) {
-        return { ok: true, data: { ...data, video_url: videoUrl } };
+      let respJson = null;
+      let respText = "";
+      try {
+        if (ct.includes("application/json")) {
+          respJson = await resp.json();
+          respText = JSON.stringify(respJson);
+        } else {
+          respText = await resp.text();
+          try { respJson = JSON.parse(respText); } catch {}
+        }
+      } catch { respText = ""; }
+
+      if (resp.ok) {
+        let outJson = respJson;
+        if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length };
+        const body = JSON.stringify(outJson || {});
+        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length) });
+        keyCooldowns.delete(key);
+        return new Response(body, { status: resp.status, headers: outHeaders });
       }
-      if (data?.video_url || data?.url) return { ok: true, data };
-      return { ok: true, data };
+
+      const errMsgRaw = respJson?.error?.message || respJson?.message || respText || `Request failed with ${resp.status}`;
+      const sanitized = sanitizeMessage(errMsgRaw);
+      lastError = { message: sanitized, status: resp.status, raw: respText };
+      lastStatus = resp.status;
+
+      if (RETRYABLE_STATUSES.has(resp.status) && attempt < order.length - 1) {
+        const ra = getRetryAfterMs(resp.headers);
+        const cd = ra ? ra + 800 : resp.status === 429 ? 45_000 : 18_000;
+        setCooldown(key, cd);
+        await new Promise(r => setTimeout(r, 300 + Math.random()*300));
+        continue;
+      }
+      const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return new Response(JSON.stringify({ error: { message: sanitized, status: resp.status } }), { status: resp.status, headers });
+    } catch (e) {
+      lastError = { message: "Network error polling Oxyy.", status: 0, raw: String(e) };
+      lastStatus = 0;
+      setCooldown(key, 12_000);
+      if (attempt < order.length - 1) {
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
     }
-    if (status === "failed" || status === "error" || status === "cancelled") {
-      const err = data?.error?.message || data?.message || text || "Video generation failed.";
-      return { ok: false, error: sanitizeMessage(err), status: 500, code: "generation_failed" };
-    }
-    const ra = getRetryAfterMs(resp.headers);
-    if (ra) interval = Math.min(Math.max(ra, 4000), 8000);
-    else interval = 5000;
   }
-  return { ok: false, error: "Video generation timed out. Please try again.", status: 504, code: "timeout" };
+
+  return jsonError(lastError?.message || "Polling failed after retries.", lastStatus || 500);
 }
 
 export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: { "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type, authorization, x-idempotency-key", "access-control-max-age": "86400" } });
+  return new Response(null, { status: 204, headers: { "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type, authorization, x-idempotency-key", "access-control-max-age": "86400" } });
 }
