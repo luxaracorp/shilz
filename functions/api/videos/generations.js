@@ -276,14 +276,20 @@ export async function onRequestGet(context) {
       lastError = { message: sanitized, status: resp.status, raw: respText };
       lastStatus = resp.status;
 
-      if (RETRYABLE_STATUSES.has(resp.status) && attempt < order.length - 1) {
-        const ra = getRetryAfterMs(resp.headers);
-        const cd = ra ? ra + 800 : resp.status === 429 ? 45_000 : 18_000;
-        setCooldown(key, cd);
-        await new Promise(r => setTimeout(r, 300 + Math.random()*300));
+      const shouldRetry = (RETRYABLE_STATUSES.has(resp.status) || resp.status === 404) && attempt < order.length - 1;
+      if (shouldRetry) {
+        if (resp.status !== 404){
+          const ra = getRetryAfterMs(resp.headers);
+          const cd = ra ? ra + 800 : resp.status === 429 ? 45_000 : 18_000;
+          setCooldown(key, cd);
+        }
+        await new Promise(r => setTimeout(r, 280 + Math.random()*220));
         continue;
       }
       const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      if (resp.status === 404){
+        return new Response(JSON.stringify({ error: { message: "Video job not found. It may have expired or was created with a different key pool. Try generating again.", status: 404 } }), { status: 404, headers });
+      }
       return new Response(JSON.stringify({ error: { message: sanitized, status: resp.status } }), { status: resp.status, headers });
     } catch (e) {
       lastError = { message: "Network error polling Oxyy.", status: 0, raw: String(e) };
