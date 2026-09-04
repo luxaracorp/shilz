@@ -10,7 +10,7 @@
   const KEYS = ["proxy"];
 
   const VIDEO_MODELS = [
-    { id: "veo-3", label: "Veo 3", badge: "Google", audio: true },
+    { id: "veo-3.1", label: "Veo 3", badge: "Google", audio: true },
     { id: "veo-3.1-fast", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
     { id: "grok-imagine-video", label: "Grok Imagine", badge: "xAI", audio: true }
   ];
