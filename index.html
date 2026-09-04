@@ -38,7 +38,7 @@
           <span class="brand-mark" aria-hidden="true"></span>
           <span class="brand-type">Shilo Workspace</span>
           <span class="brand-dot" aria-hidden="true"></span>
-          <span class="brand-sub">Nano Banana Pro</span>
+          <span class="brand-sub">Image + Video Studio</span>
         </a>
         <nav class="topbar-actions" aria-label="Workspace actions">
           <div class="key-indicator" id="keyIndicator" role="status" aria-live="polite" aria-label="API key status">
@@ -59,15 +59,50 @@
       </div>
     </header>
 
+    <!-- Projects bar -->
+    <div class="projects-bar" id="projectsBar" role="toolbar" aria-label="Projects">
+      <div class="projects-bar-left">
+        <span class="projects-bar-label">Project</span>
+        <div class="projects-select-wrap">
+          <select id="projectSelect" aria-label="Select project"></select>
+          <span class="projects-select-icon" aria-hidden="true">▾</span>
+        </div>
+        <button class="text-btn text-btn--small" id="renameProjectBtn" type="button" title="Rename project">Rename</button>
+        <button class="text-btn text-btn--small text-btn--danger" id="deleteProjectBtn" type="button" title="Delete project">Delete</button>
+      </div>
+      <div class="projects-bar-right">
+        <div class="projects-search-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20L15.5 15.5"/></svg>
+          <input id="projectSearch" type="search" placeholder="Search prompts, tags…" aria-label="Search project assets" autocomplete="off" />
+        </div>
+        <select id="projectSort" aria-label="Sort assets">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="image">Images first</option>
+          <option value="video">Videos first</option>
+        </select>
+        <select id="projectFilter" aria-label="Filter assets">
+          <option value="all">All</option>
+          <option value="image">Images</option>
+          <option value="video">Videos</option>
+        </select>
+        <button class="icon-btn icon-btn--small" id="projectsToggle" type="button" aria-label="Manage projects" aria-expanded="false" aria-controls="projectsPanel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 6H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L8 19l-4 1 1-4 13.5-13.5z"/></svg>
+          <span class="hide-mobile">Manage</span>
+        </button>
+        <button class="icon-btn icon-btn--small" id="newProjectBtn" type="button" aria-label="New project">+ New</button>
+      </div>
+    </div>
+
     <!-- Workspace -->
     <main class="workspace" id="workspace" role="main">
       <div class="conversation" id="conversation" aria-live="polite" aria-label="Conversation">
         <!-- Hero — Atelier -->
         <section class="hero" id="hero" aria-label="Welcome">
           <div class="hero-meta">
-            <span class="hero-kicker">Atelier — Nano Banana Pro</span>
+            <span class="hero-kicker">Atelier — Image + Video Studio</span>
             <span class="hero-rule" aria-hidden="true"></span>
-            <span class="hero-credit">Oxyy · 60 cr / image</span>
+            <span class="hero-credit" id="heroCredit">Oxyy · Nano Banana · Veo · Grok Imagine</span>
           </div>
           <div class="hero-eyebrow">
             <span class="eyebrow-dot" aria-hidden="true"></span>
@@ -78,7 +113,7 @@
             <span class="hero-title-line hero-title-line-1"><span class="hero-title-hello">Hello,</span> <em class="hero-title-name">Shilo.</em></span>
             <span class="hero-title-line hero-title-line-2">What are we <i>creating</i> today?</span>
           </h1>
-          <p class="hero-subtitle">A private studio for <em>image</em> — brutal light, quiet material, perfect surface. Drop an image or start typing.</p>
+          <p class="hero-subtitle">A private studio for <em>images &amp; videos</em> — Nano Banana, Veo &amp; Grok Imagine. Start from text or bring a reference.</p>
           <div class="hero-ornament" aria-hidden="true"><span></span><i>✦</i><span></span></div>
           <div class="hero-suggestions" id="heroSuggestions" role="group" aria-label="Try a prompt">
             <button class="suggestion" type="button" data-prompt="A serene Japanese tea house at dawn, soft mist over a koi pond, muted film grain, ultra-detailed, natural light"><span>Tea house at dawn</span><em>mist &amp; koi — film grain</em></button>
@@ -108,6 +143,18 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
+          </div>
+
+          <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="Creation mode">
+            <button class="mode-btn is-active" type="button" data-mode="image" role="tab" aria-selected="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+              Image
+            </button>
+            <button class="mode-btn" type="button" data-mode="video" role="tab" aria-selected="false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M15 10l5-4v12l-5-4z"/><rect x="3" y="5" width="12" height="14" rx="2"/></svg>
+              Video
+            </button>
+            <span class="mode-hint" id="modeHint" aria-live="polite">Nano Banana 2</span>
           </div>
 
           <form class="composer" id="composerForm" aria-label="Image generation composer">
@@ -140,6 +187,18 @@
             </div>
 
             <div class="composer-controls" role="group" aria-label="Generation settings">
+              <div class="control-group image-only" id="imageModelGroup" aria-label="Image model">
+                <span class="control-label">Model</span>
+                <div class="pill-row" id="imageModelRow" role="radiogroup" aria-label="Image model">
+                  <button type="button" class="pill" data-model="nano-banana-2" role="radio" aria-checked="true">Nano Banana 2</button>
+                </div>
+              </div>
+              <div class="control-group video-only" id="videoModelGroup" aria-label="Video model" hidden>
+                <span class="control-label">Model</span>
+                <div class="pill-row" id="videoModelRow" role="radiogroup" aria-label="Video model">
+                  <!-- filled by JS -->
+                </div>
+              </div>
               <div class="control-group" aria-label="Aspect ratio">
                 <span class="control-label">Ratio</span>
                 <div class="pill-row" id="ratioRow" role="radiogroup" aria-label="Aspect ratio">
@@ -147,20 +206,34 @@
                 </div>
               </div>
               <div class="control-divider" aria-hidden="true"></div>
-              <div class="control-group" aria-label="Resolution">
-                <span class="control-label">Resolution</span>
+              <div class="control-group" id="resGroup" aria-label="Resolution">
+                <span class="control-label" id="resLabel">Resolution</span>
                 <div class="pill-row" id="resRow" role="radiogroup" aria-label="Resolution">
-                  <button type="button" class="pill" data-res="1K" role="radio" aria-checked="true">1K</button>
-                  <button type="button" class="pill" data-res="2K" role="radio" aria-checked="false">2K</button>
-                  <button type="button" class="pill" data-res="4K" role="radio" aria-checked="false">4K</button>
+                  <!-- filled by JS -->
                 </div>
+              </div>
+              <div class="control-group video-only" id="videoDurationGroup" aria-label="Duration" hidden>
+                <span class="control-label">Duration</span>
+                <div class="pill-row" id="durationRow" role="radiogroup" aria-label="Duration">
+                  <button type="button" class="pill" data-duration="4" role="radio" aria-checked="true">4s</button>
+                  <button type="button" class="pill" data-duration="6" role="radio" aria-checked="false">6s</button>
+                  <button type="button" class="pill" data-duration="8" role="radio" aria-checked="false">8s</button>
+                </div>
+              </div>
+              <div class="control-group video-only" id="videoAudioGroup" aria-label="Audio" hidden>
+                <label class="audio-toggle" for="audioToggle">
+                  <input type="checkbox" id="audioToggle" checked />
+                  <span class="audio-toggle-ui" aria-hidden="true"></span>
+                  <span class="audio-toggle-label">Audio</span>
+                </label>
               </div>
               <div class="composer-meta">
                 <span class="composer-hint"><kbd>↵</kbd> generate · <kbd>⇧↵</kbd> newline</span>
+                <span class="project-hint" id="projectHint" aria-hidden="true">· <span id="projectHintName">My Studio</span></span>
               </div>
             </div>
           </form>
-          <p class="composer-footnote">Images via Oxyy · <strong style="color:rgba(255,255,255,0.52); font-weight:600">Nano Banana Pro</strong> · 60 credits/image · Keys stay in your browser</p>
+          <p class="composer-footnote" id="composerFootnote">Images via Oxyy · <strong style="color:rgba(255,255,255,0.52); font-weight:600">Nano Banana Pro</strong> · 60 credits/image · Keys stay in your browser</p>
         </div>
       </div>
     </main>
@@ -185,6 +258,32 @@
     </aside>
     <div class="history-backdrop" id="historyBackdrop" hidden></div>
 
+    <!-- Projects panel -->
+    <aside class="projects-panel" id="projectsPanel" aria-label="Projects" aria-hidden="true" inert>
+      <div class="projects-panel-head">
+        <h2 class="projects-panel-title">Projects</h2>
+        <div class="projects-panel-actions">
+          <span class="projects-panel-subtitle" id="projectsSubtitle">Local only</span>
+          <button class="icon-btn icon-btn--small" id="projectsClose" type="button" aria-label="Close projects">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="projects-panel-create">
+        <input id="newProjectNameInput" type="text" placeholder="New project name…" maxlength="40" aria-label="New project name" />
+        <button class="btn btn--primary btn--small" id="createProjectBtn" type="button">Create</button>
+      </div>
+      <div class="projects-list" id="projectsList" role="list" aria-label="Project list"></div>
+      <div class="projects-panel-tools">
+        <button class="text-btn" id="exportProjectsBtn" type="button">Export JSON</button>
+        <label class="text-btn" for="importProjectsFile" role="button" tabindex="0">Import JSON</label>
+        <input id="importProjectsFile" type="file" accept=".json,application/json" hidden />
+        <button class="text-btn text-btn--danger" id="clearProjectsBtn" type="button" title="Clear all projects (keeps default)">Clear all</button>
+      </div>
+      <p class="projects-panel-hint">Projects live in <code>localStorage</code>. Export to back up.</p>
+    </aside>
+    <div class="projects-backdrop" id="projectsBackdrop" hidden></div>
+
     <!-- Lightbox -->
     <div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Image viewer">
       <div class="lightbox-backdrop" id="lightboxBackdrop"></div>
@@ -201,7 +300,8 @@
             </button>
           </div>
         </div>
-        <img class="lightbox-img" id="lightboxImg" alt="" />
+        <img class="lightbox-img" id="lightboxImg" alt="" hidden />
+        <video class="lightbox-video" id="lightboxVideo" controls playsinline hidden></video>
       </div>
     </div>
 

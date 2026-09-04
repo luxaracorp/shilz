@@ -1,22 +1,23 @@
-# Shilo Workspace — Nano Banana Pro
+# Shilo Workspace — Image + Video Studio
 
-Premium image studio for **Oxyy Nano Banana Pro** (`nano-banana-2` via a secure Cloudflare Pages Function).  
-Apple-level polish · ChatGPT-style conversation · glass composer · no backend.
+Premium **image + video** atelier for **Oxyy** — `nano-banana-2` (Nano Banana Pro), `veo-3`, `veo-3.1-fast`, `grok-imagine-video`, `grok-imagine-video-1.5` via secure Cloudflare Pages Functions.  
+Atelier Noir · Champagne Noir · Glass composer · No traditional backend.
 
-> Static frontend only. No server, no database, no auth. Deployable to Cloudflare Pages or GitHub Pages in seconds.
+> Static frontend only. All Oxyy credentials live in Cloudflare Workers bindings (`context.env`). Deployable to Cloudflare Pages or static hosting + Pages Functions in seconds.
 
 ---
 
 ## ✨ Features
 
-- **Text → image** and **reference image → edit/transform** with Oxyy `nano-banana-2` (60 credits/image)
-- **All ratios:** `1:1` `16:9` `9:16` `4:3` `3:4` `3:2` `2:3` `21:9` → mapped to `size` e.g. `1024x1024`, `1024x576`
-- **All resolutions:** `1K` `2K` `4K` (longest side 1024/2048/4096, rounded to 64px)
-- **Server-side key failover** — configure `OXY_API_KEY` or comma/newline-separated `OXY_API_KEYS` in Cloudflare Pages; keys never reach the browser
-- **Premium UX:** `Hello, Shilo.` hero, floating glass composer, animated thread, shimmer loader, lightbox, history gallery — now refined for Nano Banana Pro
-- **Reference images:** click to upload, drag & drop, or paste (PNG/JPEG/WebP, <12 MB) — sent as `image` data URL to Oxyy
-- **Local history** via `localStorage` with graceful quota handling
-- **Vanilla stack** — HTML/CSS/JS only, < 65 KB total, instant load
+- **Image:** text → image, image → edit with **nano-banana-2** (60 credits/image). Ratios `1:1` `16:9` `9:16` `4:3` `3:4` `3:2` `2:3` `21:9` → `size` `1024x1024…4096x2304` (64-px rounded). Resolutions `1K` `2K` `4K`.
+- **Video:** text → video, image → video with **Veo 3**, **Veo 3.1 Fast**, **Grok Imagine Video / 1.5**. Controls: duration `4`/`6`/`8`s, aspect ratio, resolution `720p`/`1080p`, audio toggle. Uses Oxyy async `POST /v1/videos/generations` + `GET /v1/videos/generations/:job_id` polling (5s interval, 5-min timeout).
+- **Mode switch:** Image / Video toggle in composer; composer labels, credit text, and hero are model-aware.
+- **Projects:** local `localStorage` system `shilo_workspace_projects_v1` — create/rename/delete/switch projects, store images+videos per project, search by prompt/tags, filter `all|image|video`, sort `newest|oldest|image|video`, add tags, rename assets, delete assets, open in lightbox (`<img>`/`<video controls>`), download (`data:` & `https:`), export/import JSON. Migrates `shilo_workspace_history_v2` → default project `My Studio` without loss.
+- **Asset cards:** unified cards show prompt, model, mode, duration, ratio, resolution, timestamp, project tag, retry/download/open; shimmer/loading/reveal animations preserved, glass atelier styling, responsive.
+- **Reference images:** click/drag/paste `PNG`/`JPEG`/`WebP` `<12 MB` — sent as `image`/`image_base64` data URL to Oxyy for both image edits and `image-to-video`.
+- **Secure proxy:** `functions/api/images/generations.js` & `functions/api/videos/generations.js` read `env.OXY_API_KEYS`|`env.OXY_API_KEY` (comma/newline-separated), round-robin/LRU, per-key cooldowns (`429→45s|Retry-After`, `5xx→18s`, `network→12s`), idempotency (`X-Idempotency-Key`), `Cache-Control: no-store`, sanitized errors, never log keys, return `X-Proxy-Key-Index`/`X-Proxy-Total-Keys` for “Key 2/4 used” UI.
+- **Branding:** Shilo logo (`icon.png`), Instrument Serif + Inter, Atelier Noir/Champagne, premium motion (respects `prefers-reduced-motion`).
+- **Vanilla:** HTML/CSS/JS only, < 90 KB, no database.
 
 ---
 
@@ -24,132 +25,72 @@ Apple-level polish · ChatGPT-style conversation · glass composer · no backend
 
 ```
 shilo-workspace/
-├── index.html          # App shell — hero, thread, composer, history, lightbox
-├── style.css           # Premium dark system — glass, motion, responsive (Pro polish)
-├── app.js              # Oxyy integration (api.oxyy.ai), key manager, composer, viewer, history
-├── functions/api/images/generations.js # Same-origin secure Oxyy proxy
-├── config.example.js   # Server-variable guidance only
-├── .gitignore          # Ignores config.js
+├── index.html                         # Atelier shell — mode switch, projects bar, composer, history/projects panels, lightbox (img+video)
+├── style.css                          # Atelier Noir system — glass, amber glow, mode & projects styling
+├── app.js                             # Image + video generation, projects, key indicator, composer, lightbox
+├── functions/api/images/generations.js# Secure Oxyy image proxy (key pool, retry, idempotency)
+├── functions/api/videos/generations.js# Secure Oxyy video proxy + async polling
+├── config.example.js                  # Placeholders + env docs
+├── .gitignore                         # Ignores config.js
 └── README.md
 ```
 
 ---
 
-## 🔑 1. Configure the Pages Function
+## 🔑 1. Configure Cloudflare Pages Functions
 
-In Cloudflare Pages, open Settings → Environment variables and add `OXY_API_KEY`.
-For failover, use `OXY_API_KEYS` with comma- or newline-separated values.
+In **Cloudflare Dashboard → Workers & Pages → Your Pages project → Settings → Environment variables** add:
 
-```bash
-cp config.example.js config.js
-# then edit config.js
+- `OXY_API_KEY` — single key, or
+- `OXY_API_KEYS` — **recommended** comma- or `newline`-separated list (up to N keys) for rotation.
+
+Example value for `OXY_API_KEYS`:
+
+```
+oxyy-aaaa...,oxyy-bbbb...,oxyy-cccc...
 ```
 
-Do not put Oxyy credentials in `config.js`, HTML, or frontend JavaScript. The frontend posts to `/api/images/generations`; the Pages Function adds the Bearer credential server-side.
+Or newline separated:
 
-```js
-window.OXY_KEYS = [
-  "oxyy-c1ac9357ab8d55370a5c3f983cb015307af986c690c3bd6e521089de696b9399",
-  "oxyy-d05b8ad0a122e33116ee568074c449fa046f92bfc1c6018ea4df34871af66361",
-  "oxyy-e9e2510ef42e89743ed4b82719f2a6bc671bc7a14f17dde09706549f461dae71"
-];
-window.GEMINI_KEYS = window.OXY_KEYS.slice(); // compat alias
-
-window.OXY_BASE_URL = "https://api.oxyy.ai/v1";
-window.OXY_MODEL = "nano-banana-2";
-window.GEMINI_MODEL = "nano-banana-2";
+```
+oxyy-aaaa...
+oxyy-bbbb...
 ```
 
-`config.example.js` contains only placeholders:
+Both `functions/api/images/generations.js` and `functions/api/videos/generations.js` share the same pool. The frontend posts to same-origin:
 
-```js
-window.OXY_KEYS = [
-  "PASTE_OXY_KEY_1_HERE",
-  "PASTE_OXY_KEY_2_HERE",
-  "PASTE_OXY_KEY_3_HERE"
-];
-window.GEMINI_KEYS = window.OXY_KEYS.slice();
-window.OXY_BASE_URL = "https://api.oxyy.ai/v1";
-window.OXY_MODEL = "nano-banana-2";
-window.GEMINI_MODEL = "nano-banana-2";
+```
+POST /api/images/generations   → proxies to https://api.oxyy.ai/v1/images/generations
+POST /api/videos/generations   → proxies to https://api.oxyy.ai/v1/videos/generations
+GET  /api/videos/generations/:id → poll (server-side)
 ```
 
-> **Security:** keys live only in `config.js`. They are never hardcoded in `index.html`, `app.js`, or CSS. The UI shows only an aggregate dot indicator (ready / cooling / generating) — never the key values. The app never logs keys. You accept that a deployed client-side app can be inspected by anyone with access to the URL; keep the deployment private.
+No keys ever reach the browser. Use Worker-compatible bindings only: `fetch`, `Request`, `Response`, `context.env`, Web APIs. Never create an Express/Node server.
+
+Local static hosting (GitHub Pages without Functions) will fail to generate — deploy to Cloudflare Pages for secure proxy, or use `config.js` locally (see below).
 
 ---
 
-## ▶️ 2. Run locally
+## 🎬 2. Supported model IDs (exact Oxyy IDs)
 
-Any static server works. Pick one:
+| Mode | Model ID | Display | Notes |
+|------|----------|---------|-------|
+| Image | `nano-banana-2` | Nano Banana Pro | 60 cr/img, supports `image` reference |
+| Video | `veo-3` | Veo 3 | Google Veo 3, duration 4/6/8, `720p`/`1080p`, audio |
+| Video | `veo-3.1-fast` | Veo 3.1 Fast | Fast variant, lower cost |
+| Video | `grok-imagine-video` | Grok Imagine Video | xAI, 1–15s (single img up to 15s) |
+| Video | `grok-imagine-video-1.5` | Grok Imagine 1.5 | Requires image for some durations |
 
-```bash
-# Python (recommended)
-python -m http.server 8080
-
-# Node
-npx serve .
-
-# Bun / Deno / PHP — any static server
-```
-
-Then open:
-
-```
-http://localhost:8080
-```
-
-You should see **Hello, Shilo.** with a subtle reveal animation. Typing a prompt and pressing **Enter** (Shift+Enter for newline) generates via Oxyy Nano Banana Pro.
+`config.example.js` documents these. Always use IDs exactly as returned by `https://api.oxyy.ai/v1/models`; do not guess.
 
 ---
 
-## ☁️ 3. Deploy to Cloudflare Pages
+## 🧠 3. How generation works
 
-1. Push the repo to GitHub (ensure `config.js` is **not** committed — check `git status`).
-2. In Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
-3. Build settings:
-   - **Framework preset:** `None`
-   - **Build command:** *(leave empty)*
-   - **Build output directory:** `/` (or `.`)
-4. Deploy. Cloudflare serves the static files directly.
-5. For a private deployment: **Settings → Access** or keep the Pages URL unlisted.
-
-If you need keys on the deployed site, commit only `config.example.js` and manually upload `config.js` via **Cloudflare Pages → Functions → or drag-and-drop** (or set keys via a separate private fork). Most users keep generation local-only.
-
----
-
-## 📄 4. Deploy to GitHub Pages
-
-1. Create a repo, push **without** `config.js`:
-
-   ```bash
-   git init
-   git add index.html style.css app.js config.example.js .gitignore README.md
-   git commit -m "Shilo Workspace — Nano Banana Pro via Oxyy"
-   git branch -M main
-   git remote add origin https://github.com/<you>/shilo-workspace.git
-   git push -u origin main
-   ```
-
-2. GitHub → **Settings → Pages** → **Build and deployment** → **Source: Deploy from a branch** → **Branch: main / root**.
-3. Wait for deployment, open `https://<you>.github.io/shilo-workspace/`.
-
-> For GitHub Pages with private keys, keep the repo **private** or host `config.js` only on your local clone and deploy a key-less build that you run locally.
-
----
-
-## 🧠 5. How the Oxyy integration works
-
-**Endpoint** (OpenAI-compatible):
-
-```
-POST https://api.oxyy.ai/v1/images/generations
-Authorization: Bearer <OXY_API_KEY>
-Content-Type: application/json
-```
-
-**Request body** (`app.js: callOxyy`):
+**Image request** (`app.js: callOxyy`):
 
 ```json
+POST /api/images/generations
 {
   "model": "nano-banana-2",
   "prompt": "a small cat, photorealistic",
@@ -157,111 +98,148 @@ Content-Type: application/json
   "size": "1024x1024",
   "response_format": "b64_json",
   "image": "data:image/jpeg;base64,...",
+  "reference_image": "data:image/jpeg;base64,...",
   "aspect_ratio": "1:1",
   "resolution": "1K"
 }
 ```
 
-- `model` is fixed to `nano-banana-2` from `config.js` (`window.OXY_MODEL`), displayed as **Nano Banana Pro** in the UI.
-- `size` is computed from ratio + resolution (`1K=1024`, `2K=2048`, `4K=4096` longest side, ratio-preserved, rounded to 64px).
-- `image` (data URL) is only added when a reference image is attached; also sent as `reference_image`/`input_image`/`images` for compatibility.
-- `response_format: "b64_json"` requests base64 inline.
+**Video request** (`app.js: callOxyyVideo`) — text-to-video & image-to-video use same endpoint:
 
-**Response parsing** is robust for OpenAI shape:.
+```json
+POST /api/videos/generations
+{
+  "model": "veo-3",
+  "prompt": "Slowly pan across the scene with gentle motion",
+  "duration": 4,
+  "resolution": "1080p",
+  "aspect_ratio": "16:9",
+  "aspectRatio": "16:9",
+  "generate_audio": true,
+  "image": "data:image/jpeg;base64,...",
+  "image_base64": "...."
+}
+```
 
-- Primary: `data[0].b64_json` → `data:image/png;base64,...`
-- Fallbacks: `data[0].url` (fetched to base64 best-effort), `data[0].b64Json`, `images[]`, `b64_json`, deep scan
-- MIME preserved; image rendered without re-encoding.
+Fields are OpenAI-compatible. Video generation is **async**: proxy polls `GET https://api.oxyy.ai/v1/videos/generations/:job_id` every 5s until `completed` (returns `video_url`) or `failed`/timeout (5 min). Frontend waits once; no client polling needed.
 
-**No raw dumps**: API JSON is never rendered into the DOM; only the extracted image and sanitized errors are shown.
+Response parsing: `data[0].b64_json` → `data:image/png;base64,...`; video `video_url` → `<video controls>`; fallbacks `url`, `images[]`, deep scan; MIME preserved.
 
----
-
-## 🔁 6. How multi-key failover works
-
-`config.js` provides 3 Oxyy keys (`A/B/C`). The client-side manager:
-
-1. **Picks an available key** — prefers the last successful key (if not cooling), otherwise any ready key; cooling keys are sorted by soonest expiry.
-2. **Makes the request** with `Authorization: Bearer <key>` to `https://api.oxyy.ai/v1`.
-3. **On transient failure** (`429`, `500`, `503`, network error) — puts that key on **cooldown** (`429 → 45s` or `Retry-After` header, `5xx → 18s`, `network → 12s`), shows *Trying another Oxyy key…*, and retries the next key.
-4. **On auth/config failure** (`401`/`403`, `400`) — also cools the key (30 s) and tries the next key, but limits `400` retries to 2 attempts.
-5. **Tracks** `lastSuccessfulKey`, `failures`, `cooldownUntil` per key.
-6. **Caps retries** at `number of keys` (max 3) — never loops endlessly.
-7. **Never circumvents** provider security: respects `Retry-After`, small inter-retry delays (300–700 ms), surfaces *Generation unavailable* when all keys are exhausted.
-
-**Status indicator** (top-right, next to History):
-
-- ● green = ready
-- ● amber pulsing = busy (generating)
-- ● red = cooling
-- Text: `3 ready` / `2 ready · 1 cooling · 12s` / `generating…` / `cooling down · 45s` — **click the pill to reset cooldowns instantly**.
-
-**Differentiated errors** (human-friendly, never exposing keys):
-
-| Condition | Title | Message |
-|---|---|---|
-| Network | Couldn't reach Oxyy | Check your connection and try again. |
-| 429 (credit) | Oxyy credits exhausted | Insufficient credits for Nano Banana Pro (60 credits/image). Top up at https://api.oxyy.ai |
-| 429 (rate-limit) | Generation unavailable | All keys are temporarily rate-limited… (shows Retry-After) |
-| 401/403 | Authentication failed | Oxyy rejected the API keys. Verify `oxyy-...` keys in config.js. |
-| 400 (prompt) | Request error | That prompt was rejected… |
-| 500/503 | Oxyy is temporarily unavailable | Oxyy is temporarily unavailable… |
-| No image in response | No image returned | No image was returned… |
+**Idempotency:** frontend sends `X-Idempotency-Key: <uuid>`; proxy caches response 10 min to prevent double charge on retry.
 
 ---
 
-## 🔒 7. Security implications of client-side API keys
+## 🔁 4. How key rotation works (server-side pool)
 
-This is a **private, client-side** app by design. Implications:
+Both functions:
 
-- **Any visitor** to the deployed URL can open DevTools → `config.js` / `Network` and see the keys. Only deploy to a **private, access-controlled** URL or run locally.
-- **Keys are never committed**: `.gitignore` blocks `config.js`. Only `config.example.js` (placeholders) should be committed.
-- **UI never reveals keys**: indicator is aggregate; toasts/errors are sanitized (`oxyy-…` → `[key]`); no `console.log` of keys.
-- **No proxy**: requests go directly to `api.oxyy.ai`; the browser origin is the caller. Oxyy keys are `Bearer` tokens — keep them private.
-- **Rate & credit** are per-key, per Oxyy account — a leaked key can be abused (60 credits/image). Rotate keys at https://api.oxyy.ai if exposure is suspected.
-- **Mitigations** (optional, not included to keep the app zero-backend): add a Cloudflare Worker proxy that holds keys server-side, or restrict keys by IP in Oxyy dashboard.
+1. `parseKeys()` splits `OXY_API_KEYS`/`OXY_API_KEY` on commas/newlines.
+2. In-memory `Map<key, cooldownUntil>` + `roundRobinIndex` — pick LRU: available keys first (sorted by earliest cooldown), then cooling keys nearest expiry.
+3. On `401/403/402/429/500/502/503/504` try next key; on `400` with validation/moderation/malformed (`/moderation|policy|validation/i`) **do not retry** (permanent).
+4. Respect `Retry-After` header (`45s` for `429`, `18s` for `5xx`, `12s` network, `30s` auth) + jitter; `setCooldown(key, ms)`.
+5. No infinite loop — cap at `totalKeys`; small delays `300–700ms` between retries.
+6. Never log or return keys; sanitize `oxyy-...` → `[key]`; return `x-proxy-key-index`/`x-proxy-total-keys`/`x-proxy-model` and `_shilo_proxy` JSON for UI (“Key 2/4 used”).
+
+Browser `KEYS = ["proxy"]` (`app.js:11`) keeps UI single-slot; `updateKeyIndicator()` shows proxy readiness and expands to `ready · cooling` when server reports cooldowns. History/project toasts show key index on success.
+
+---
+
+## 📦 5. Projects & organization (local)
+
+Storage keys:
+
+- `shilo_workspace_projects_v1` — `[{ id, name, createdAt, updatedAt, assets: [...] }]`
+- `shilo_workspace_active_project_v1` — active id
+- `shilo_workspace_history_v2` — legacy, migrated once to default project `My Studio` (`shilo_migrated_v1` flag)
+
+Asset shape:
+
+```js
+{ id, projectId, type:"image"|"video", prompt, model, mode, aspect, resolution, duration, audio, mediaUrl, mime, poster, timestamp, tags:[], title, refThumb }
+```
+
+UI:
+
+- **Projects bar** (sticky below topbar): `<select>` switch, Rename/Delete, Search input, Sort/Filter selects, Manage + New buttons.
+- **Projects panel** (slide-in): list with active highlight, Create input, Export JSON, Import JSON (`<input type=file>`), Clear all.
+- **History panel** now shows *current project’s filtered assets* (search `prompt|title|tags|model`, filter image/video, sort newest/oldest/type). Each card: thumbnail (`<img>` or `<video muted loop>` + ▶ badge), prompt/title, time·model·ratio·res·duration·audio, tags, Open/Rename/Delete/Download.
+- **Thread cards:** same meta + project pill, retry/download/open.
+- **Lightbox:** auto-detects `<img>` vs `<video controls>`; download handles both.
+- **Export/import:** `exportProjects()` downloads `{ version, exportedAt, projects }`; `importProjects(file)` merges, deduplicates ids, caps 96 assets/project.
+- **Quota:** `persistProjects()` catches `QuotaExceeded` → strips `refThumb`, trims to 6 assets in oldest projects, else warns.
+
+---
+
+## 🎨 6. UI & branding
+
+- Brand subtitle: **Image + Video Studio** (not Nano Banana-only).
+- Hero: kicker `Atelier — Image + Video Studio`, credit `Oxyy · Nano Banana · Veo · Grok Imagine`, subtitle mentions images & videos, suggestions include video-friendly prompts.
+- Composer: `Image|Video` pill toggle (`#modeSwitch`); image shows `Nano Banana 2` pill; video shows `Veo/Grok` pills, `Duration 4s/6s/8s`, `Resolution 720p/1080p`, `Audio` toggle; placeholder & footnote & badge change per mode; credit avoids hardcoding 60 for video.
+- Premium Atelier Noir retained: `icon.png`, champagne `#E8D9B8`, warm obsidian `#0C0B0A`, glass 28px blur, Instrument Serif.
+
+---
+
+## ☁️ 7. Local development & deployment
+
+**Local:**
+
+```bash
+# Python (recommended)
+python -m http.server 8080
+# or: npx serve .
+# open http://localhost:8080
+```
+
+For local *secure* proxy, use Cloudflare Pages local: `npx wrangler pages dev . --compatibility-date=2025-09-04` (needs `wrangler.toml` with `OXY_API_KEYS`).
+
+For quick local without Functions, create `config.js` from `config.example.js` (gitignored) with `window.OXY_KEYS=[...]` — requests go direct to `api.oxyy.ai` (keep deployment private).
+
+**Deploy to Cloudflare Pages:**
+
+1. Push to GitHub (ensure `config.js` not committed).
+2. Cloudflare → Workers & Pages → Create → Pages → Connect to Git.
+3. Build: Framework `None`, Build command *(empty)*, Output `/`.
+4. Settings → Environment variables → add `OXY_API_KEYS` (or `OXY_API_KEY`) — *Production* and *Preview*.
+5. Deploy. Frontend calls `POST /api/images/generations` & `POST /api/videos/generations` securely.
+
+**Deploy to GitHub Pages (static only, no video proxy):** keep repo private or run Pages Functions via Cloudflare; otherwise static hosting will show “Oxyy server configuration is missing.”
+
+---
+
+## 🔒 8. Reliability & security
+
+Handles: `401/403` auth, `402/429` credits/quota, `400` validation (no retry), `5xx`, network, malformed, expired URLs, quota. Never silently retry a charge-risk request without `X-Idempotency-Key`. Sanitizes all errors, never exposes keys, `Cache-Control: no-store`, retries with jitter and `Retry-After`.
+
+Do not create accounts or bypass quotas — only keys legitimately configured by the owner are used.
+
+**Limitations:** in-memory cooldowns per isolate (not global), polling caps 5 min, `localStorage` quota varies by browser (export often), GitHub Pages without Functions lacks proxy, video URLs may expire.
 
 ---
 
 ## ⌨️ Composer & shortcuts
 
-- **Enter** → Generate
-- **Shift+Enter** → Newline
-- **Click paperclip** / **drag & drop** / **paste (Ctrl+V)** → attach reference
-- **Ratio / Resolution pills** → affect `size` sent to Oxyy
-- While generating, composer is disabled and shows *Generating…*
+- `Enter` → Generate (image or video per mode), `Shift+Enter` → newline
+- Paperclip / drag & drop / `Ctrl+V` → attach reference (image for both modes)
+- Mode pills → switch Image/Video; Duration/Resolution/Audio affect video payload
+- `⌘/Ctrl+K` → focus prompt
 
 ---
 
-## 🖼️ Viewer & history
-
-- Click any generated image to open the **lightbox** (Esc or click outside to close, Download button inside — handles both `data:` and `https:` URLs).
-- **History** (top-right) slides in, shows local thumbnails (lazy), time + ratio. Stored under `shilo_workspace_history_v2` in `localStorage`.
-- If `localStorage` is full, the app **trims** oldest entries / strips reference thumbnails and keeps the latest images, then shows a toast — it never crashes.
-- **Export** downloads history metadata (prompts + settings, not image bytes to keep the file small). **Clear all** wipes local history after confirmation. **Clear conversation** (top-right ×) clears the thread (and restores the hero).
-
----
-
-## 🎨 Design notes — Nano Banana Pro polish
-
-- **Palette:** near-black `#08080A` with soft whites, muted grays, `rgba(255,255,255,0.06)` borders, translucency + `backdrop-blur` for depth — refined Pro tier (no neon, no heavy gradients).
-- **Type:** `Inter` for UI, `Instrument Serif` for the hero, `JetBrains Mono` for kbd hints.
-- **Polish:** hero eyebrow with inset shadow + glow dot, brand Pro pill, composer with layered depth + focus ring, suggestion chips with lift + blur, cards with hover border + shadow, topbar with saturated blur.
-- **Motion:** hero reveal, message slide-up, card shimmer, dot bounce, toast pop — all subtle, fast, expensive-feeling. Respects `prefers-reduced-motion: reduce`.
-
----
-
-## ✅ Local test
+## ✅ Tests (manual)
 
 ```bash
 python -m http.server 8080
-# open http://localhost:8080 and verify:
-# hero shows "Nano Banana Pro · 60 credits/image · Oxyy", prompt submit via Oxyy, image parsing (b64_json/url), key fallback (temporarily break one key),
-# reference upload (click/drag/paste) as image, ratio/res → size, download (data: and https:), lightbox (Esc/click outside),
-# retry, history persistence, quota handling (fill localStorage in DevTools), network off,
-# mobile narrow width, keyboard (Tab, Enter, Shift+Enter), reduced-motion, console has no keys
+# 1. Image text→image (Nano Banana 2) — verify 60cr toast, card, history, lightbox, download, project save
+# 2. Image image→image — attach ref, generate, verify edit
+# 3. Video text→video (Veo 3) — 4s 16:9 720p audio on, verify polling, video card, play, download, project
+# 4. Video image→video (Grok) — attach ref, generate, verify
+# 5. Key failover — temporarily set one bad key in OXY_API_KEYS, verify “Trying another key…” and success via second key, check X-Proxy headers
+# 6. Error 400 prompt — validation error, verify no retry loop
+# 7. Projects — create/rename/delete/switch, search “k oi”, filter video, sort, add tag, rename asset, delete asset, export JSON, import JSON, verify migration
+# 8. Quota — fill localStorage in DevTools, verify trim toast
+# 9. Mobile — 375px width, verify composer, cards, bars, panels
+# 10. No keys — clear env, verify 503 “Oxyy server configuration is missing.”
 ```
 
----
+*Built without frameworks — just a beautiful, fast atelier for Nano Banana, Veo, and Grok Imagine via Oxyy.*
 
-*Built without frameworks, without a backend — just a beautiful, fast canvas for Nano Banana Pro via Oxyy.*

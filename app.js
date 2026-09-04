@@ -2,13 +2,23 @@
   "use strict";
 
   // ——— Config — Oxyy ———
-  // Oxyy is called by the same-origin Pages Function; credentials never enter the browser.
   const BASE_URL = "/api";
-  const MODEL = (window.OXY_MODEL || window.GEMINI_MODEL || "nano-banana-2").trim();
+  const IMAGE_MODEL = (window.OXY_MODEL || window.GEMINI_MODEL || "nano-banana-2").trim();
+  const MODEL = IMAGE_MODEL;
   const DISPLAY_MODEL = "Nano Banana Pro";
-  // The browser uses a single logical proxy slot; credentials remain server-side.
-  // Keep one logical slot so the existing loading/failover UI remains intact.
+  const DISPLAY_VIDEO_MODEL = "Veo / Grok Imagine";
   const KEYS = ["proxy"];
+
+  const VIDEO_MODELS = [
+    { id: "veo-3", label: "Veo 3", badge: "Google", audio: true },
+    { id: "veo-3.1-fast", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
+    { id: "grok-imagine-video", label: "Grok Imagine", badge: "xAI", audio: true },
+    { id: "grok-imagine-video-1.5", label: "Grok 1.5", badge: "1.5", audio: true }
+  ];
+  const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
+  const VIDEO_RESOLUTIONS = ["720p","1080p"];
+  const VIDEO_DURATIONS = ["4","6","8"];
+  const RATIOS = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9"];
 
   // ——— DOM ———
   const $ = (s, r = document) => r.querySelector(s);
@@ -48,10 +58,45 @@
   const dragOverlay = $("#dragOverlay");
   const lightbox = $("#lightbox");
   const lightboxImg = $("#lightboxImg");
+  const lightboxVideo = $("#lightboxVideo");
   const lightboxCaption = $("#lightboxCaption");
   const lightboxBackdrop = $("#lightboxBackdrop");
   const lightboxClose = $("#lightboxClose");
   const lightboxDownload = $("#lightboxDownload");
+
+  const modeSwitch = $("#modeSwitch");
+  const modeHint = $("#modeHint");
+  const imageModelRow = $("#imageModelRow");
+  const videoModelRow = $("#videoModelRow");
+  const videoModelGroup = $("#videoModelGroup");
+  const videoDurationGroup = $("#videoDurationGroup");
+  const durationRow = $("#durationRow");
+  const videoAudioGroup = $("#videoAudioGroup");
+  const audioToggle = $("#audioToggle");
+  const resLabel = $("#resLabel");
+  const resGroup = $("#resGroup");
+  const composerFootnote = $("#composerFootnote");
+  const heroCredit = $("#heroCredit");
+  const projectSelect = $("#projectSelect");
+  const projectSearchInput = $("#projectSearch");
+  const projectSortSelect = $("#projectSort");
+  const projectFilterSelect = $("#projectFilter");
+  const projectHintName = $("#projectHintName");
+  const projectsBar = $("#projectsBar");
+  const projectsPanel = $("#projectsPanel");
+  const projectsBackdrop = $("#projectsBackdrop");
+  const projectsList = $("#projectsList");
+  const projectsSubtitle = $("#projectsSubtitle");
+  const newProjectNameInput = $("#newProjectNameInput");
+  const createProjectBtn = $("#createProjectBtn");
+  const newProjectBtn = $("#newProjectBtn");
+  const projectsToggle = $("#projectsToggle");
+  const projectsCloseBtn = $("#projectsClose");
+  const exportProjectsBtn = $("#exportProjectsBtn");
+  const importProjectsFile = $("#importProjectsFile");
+  const clearProjectsBtn = $("#clearProjectsBtn");
+  const renameProjectBtn = $("#renameProjectBtn");
+  const deleteProjectBtn = $("#deleteProjectBtn");
 
   // ——— State ———
   let aspectRatio = "1:1";
@@ -64,6 +109,20 @@
   const HISTORY_KEY = "shilo_workspace_history_v2";
   let history = [];
 
+  let mode = localStorage.getItem("shilo_mode_v1") || "image";
+  let videoModel = localStorage.getItem("shilo_video_model_v1") || VIDEO_MODELS[0].id;
+  let videoDuration = localStorage.getItem("shilo_video_duration_v1") || "4";
+  let videoResolution = localStorage.getItem("shilo_video_res_v1") || "720p";
+  let audioEnabled = localStorage.getItem("shilo_audio_v1") !== "0";
+
+  const PROJECTS_KEY = "shilo_workspace_projects_v1";
+  const ACTIVE_PROJECT_KEY = "shilo_workspace_active_project_v1";
+  let projects = [];
+  let activeProjectId = localStorage.getItem(ACTIVE_PROJECT_KEY) || null;
+  let projectSearch = "";
+  let projectSort = localStorage.getItem("shilo_projects_sort_v1") || "newest";
+  let projectFilter = localStorage.getItem("shilo_projects_filter_v1") || "all";
+
   const keyState = KEYS.map(() => ({
     failures: 0,
     cooldownUntil: 0,
@@ -73,7 +132,6 @@
   let lastSuccessfulKey = -1;
   let busyKey = -1;
 
-  const RATIOS = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9"];
   const MAX_PROMPT = 4000;
   const COOLDOWN = {
     429: 45_000,
@@ -85,23 +143,527 @@
 
   function init() {
     renderRatioPills();
+    renderVideoModelPills();
+    renderDurationPills();
     renderKeyDots();
     updateKeyIndicator();
     loadHistory();
+    loadProjects();
+    migrateHistoryToProjects();
+    ensureActiveProject();
+    renderProjectsBar();
+    renderProjectsList();
+    renderMode();
+    updateComposerFootnote();
+    updateHeroCredit();
+    if (projectSortSelect) projectSortSelect.value = projectSort;
+    if (projectFilterSelect) projectFilterSelect.value = projectFilter;
     renderHistory();
     bindEvents();
+    bindProjectEvents();
+    bindModeEvents();
     autoGrow(promptInput);
     promptInput.focus({ preventScroll: true });
     if (KEYS.length === 0) {
       showToast("Configure OXY_API_KEY in the Pages Function to start generating.", "error");
     }
-    // Update static branding if present
-    const brandSub = document.querySelector(".brand-sub");
-    if (brandSub) brandSub.textContent = DISPLAY_MODEL;
     const heroEyebrow = document.querySelector(".hero-eyebrow");
-    if (heroEyebrow) heroEyebrow.innerHTML = '<span class="eyebrow-dot" aria-hidden="true"></span> ' + DISPLAY_MODEL + ' · 60 credits/image · Oxyy';
+    if (heroEyebrow) heroEyebrow.innerHTML = '<span class="eyebrow-dot" aria-hidden="true"></span><span class="eyebrow-text">Available now — image studio for obsessives</span><span class="eyebrow-hairline" aria-hidden="true"></span>';
     initPolish();
     initMacDopamine();
+  }
+
+  function renderMode(){
+    const isVideo = mode === "video";
+    document.documentElement.setAttribute("data-mode", mode);
+    if (modeSwitch){
+      $$(".mode-btn", modeSwitch).forEach(b=>{
+        const on = b.dataset.mode === mode;
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+    }
+    if (videoModelGroup) videoModelGroup.hidden = !isVideo;
+    if (videoDurationGroup) videoDurationGroup.hidden = !isVideo;
+    if (videoAudioGroup) videoAudioGroup.hidden = !isVideo;
+    const imageOnly = document.getElementById("imageModelGroup");
+    if (imageOnly) imageOnly.hidden = isVideo;
+    if (isVideo){
+      renderVideoModelPills();
+      renderDurationPills();
+      resLabel && (resLabel.textContent = "Resolution");
+      renderResPillsVideo();
+      promptInput.placeholder = reference ? "Describe motion — how should this animate…" : "Describe a video — what should happen…";
+      generateBtn.querySelector(".generate-btn-label").textContent = "Generate Video";
+      generateBtn.setAttribute("aria-label", "Generate video");
+      if (modeHint) modeHint.textContent = VIDEO_MODELS.find(m=>m.id===videoModel)?.label || "Video";
+    } else {
+      renderResPillsImage();
+      promptInput.placeholder = "Describe what you want to create…";
+      generateBtn.querySelector(".generate-btn-label").textContent = "Generate";
+      generateBtn.setAttribute("aria-label", "Generate image");
+      if (modeHint) modeHint.textContent = "Nano Banana 2";
+    }
+    updateComposerFootnote();
+    updateHeroCredit();
+  }
+  function setMode(m){
+    if (m!== "image" && m!== "video") return;
+    mode = m;
+    localStorage.setItem("shilo_mode_v1", mode);
+    renderMode();
+    promptInput.focus();
+  }
+  function renderVideoModelPills(){
+    if (!videoModelRow) return;
+    videoModelRow.innerHTML = "";
+    VIDEO_MODELS.forEach(vm=>{
+      const b=document.createElement("button");
+      b.type="button"; b.className="pill"; b.textContent=vm.label; b.dataset.model=vm.id;
+      b.setAttribute("role","radio"); b.setAttribute("aria-checked", String(vm.id===videoModel));
+      if(vm.id===videoModel) b.classList.add("is-active");
+      b.addEventListener("click", ()=> setVideoModel(vm.id));
+      videoModelRow.appendChild(b);
+    });
+  }
+  function setVideoModel(id){
+    if (!VIDEO_MODELS.some(m=>m.id===id)) return;
+    videoModel=id;
+    localStorage.setItem("shilo_video_model_v1", id);
+    renderVideoModelPills();
+    updateComposerFootnote();
+    $$(".pill[data-model]", videoModelRow).forEach(el=>{
+      const on=el.dataset.model===id;
+      el.setAttribute("aria-checked", String(on));
+      el.classList.toggle("is-active", on);
+    });
+  }
+  function renderDurationPills(){
+    if (!durationRow) return;
+    $$(".pill", durationRow).forEach(el=>{
+      const on = el.dataset.duration===videoDuration;
+      el.setAttribute("aria-checked", String(on));
+      el.classList.toggle("is-active", on);
+    });
+  }
+  function setVideoDuration(v){
+    videoDuration=String(v);
+    localStorage.setItem("shilo_video_duration_v1", videoDuration);
+    renderDurationPills();
+    updateComposerFootnote();
+  }
+  function setVideoResolution(v){
+    videoResolution=String(v);
+    localStorage.setItem("shilo_video_res_v1", v);
+    renderResPillsVideo();
+    updateComposerFootnote();
+  }
+  function renderResPillsImage(){
+    if (!resRow) return;
+    resRow.innerHTML="";
+    IMAGE_RESOLUTIONS.forEach(r=>{
+      const b=document.createElement("button");
+      b.type="button"; b.className="pill"; b.textContent=r; b.dataset.res=r;
+      b.setAttribute("role","radio"); b.setAttribute("aria-checked", String(r===resolution));
+      if(r===resolution) b.classList.add("is-active");
+      b.addEventListener("click", ()=> setResolution(r));
+      resRow.appendChild(b);
+    });
+  }
+  function renderResPillsVideo(){
+    if (!resRow) return;
+    resRow.innerHTML="";
+    VIDEO_RESOLUTIONS.forEach(r=>{
+      const b=document.createElement("button");
+      b.type="button"; b.className="pill"; b.textContent=r; b.dataset.res=r;
+      b.setAttribute("role","radio"); b.setAttribute("aria-checked", String(r===videoResolution));
+      if(r===videoResolution) b.classList.add("is-active");
+      b.addEventListener("click", ()=> setVideoResolution(r));
+      resRow.appendChild(b);
+    });
+  }
+  function updateComposerFootnote(){
+    if (!composerFootnote) return;
+    if(mode==="video"){
+      const vm = VIDEO_MODELS.find(m=>m.id===videoModel)?.label || videoModel;
+      composerFootnote.innerHTML = `Videos via Oxyy · <strong style=\"color:rgba(255,255,255,0.52); font-weight:600\">${escapeHtml(vm)}</strong> · ${escapeHtml(videoDuration)}s · ${escapeHtml(videoResolution)} · ${audioEnabled?"Audio":"Silent"}`;
+    } else {
+      composerFootnote.innerHTML = `Images via Oxyy · <strong style=\"color:rgba(255,255,255,0.52); font-weight:600\">Nano Banana Pro</strong> · 60 credits/image · Keys stay in your browser`;
+    }
+  }
+  function updateHeroCredit(){
+    if (!heroCredit) return;
+    if (mode==="video"){
+      heroCredit.textContent = `Oxyy · ${VIDEO_MODELS.find(m=>m.id===videoModel)?.label || "Video"} · ${videoDuration}s · ${videoResolution}`;
+    } else {
+      const vm = VIDEO_MODELS.find(m=>m.id===videoModel)?.label || "Video";
+      heroCredit.textContent = `Oxyy · Nano Banana · Veo · Grok Imagine`;
+    }
+  }
+
+  function loadProjects(){
+    try{
+      const raw = localStorage.getItem(PROJECTS_KEY);
+      if (raw){
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) { projects = parsed; return; }
+      }
+    }catch{}
+    projects = [];
+  }
+  function persistProjects(){
+    try{
+      localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+      return true;
+    } catch(e){
+      if (isQuotaExceeded(e)) return handleProjectsQuotaExceeded();
+      showToast("Could not save projects locally.", "error");
+      return false;
+    }
+  }
+  function handleProjectsQuotaExceeded(){
+    let cloned = JSON.parse(JSON.stringify(projects));
+    let attempts=0;
+    while(attempts<6 && cloned.length){
+      attempts++;
+      let stripped=false;
+      for(let i=cloned.length-1;i>=0;i--){
+        for(let j=cloned[i].assets.length-1;j>=0;j--){
+          if(cloned[i].assets[j].refThumb){ cloned[i].assets[j].refThumb=null; stripped=true; break; }
+        }
+        if(stripped) break;
+      }
+      if(!stripped){
+        for(let i=cloned.length-1;i>=0;i--){
+          if(cloned[i].assets.length>6){ cloned[i].assets = cloned[i].assets.slice(0,6); stripped=true; break; }
+        }
+      }
+      if(!stripped) cloned.pop();
+      try{ localStorage.setItem(PROJECTS_KEY, JSON.stringify(cloned)); projects=cloned; showToast("Storage full — trimmed older projects to save latest."); renderProjectsBar(); renderProjectsList(); renderHistory(); return true; }catch(e){ if(!isQuotaExceeded(e)) break; }
+    }
+    showToast("Local storage is full. Export and clear old projects.", "error");
+    return false;
+  }
+  function ensureActiveProject(){
+    if (!projects.length){
+      const id = "proj_" + Date.now().toString(36);
+      projects = [{ id, name: "My Studio", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), assets: [] }];
+      activeProjectId = id;
+      persistProjects();
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+    }
+    if (!activeProjectId || !projects.some(p=>p.id===activeProjectId)){
+      activeProjectId = projects[0].id;
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+    }
+    renderProjectsBar();
+  }
+  function getActiveProject(){ return projects.find(p=>p.id===activeProjectId) || projects[0] || null; }
+  function createProject(name){
+    const clean = String(name||"").trim().slice(0,40) || `Studio ${projects.length+1}`;
+    const id = "proj_" + Date.now().toString(36) + Math.random().toString(36).slice(2,4);
+    const proj = { id, name: clean, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), assets: [] };
+    projects.unshift(proj);
+    activeProjectId = id;
+    persistProjects();
+    localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+    renderProjectsBar(); renderProjectsList(); renderHistory();
+    showToast(`Project "${clean}" created.`);
+    return proj;
+  }
+  function renameProject(id, newName){
+    const proj = projects.find(p=>p.id===id);
+    if(!proj) return;
+    const clean = String(newName||"").trim().slice(0,40);
+    if(!clean) { showToast("Project name cannot be empty.", "error"); return; }
+    proj.name = clean; proj.updatedAt = new Date().toISOString();
+    persistProjects(); renderProjectsBar(); renderProjectsList();
+    showToast("Project renamed.");
+  }
+  function deleteProject(id){
+    if(projects.length<=1){ showToast("Keep at least one project.", "error"); return; }
+    const idx = projects.findIndex(p=>p.id===id);
+    if(idx===-1) return;
+    if(!confirm(`Delete project "${projects[idx].name}" and its ${projects[idx].assets.length} assets? This cannot be undone.`)) return;
+    projects.splice(idx,1);
+    if(activeProjectId===id){ activeProjectId = projects[0].id; localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId); }
+    persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory();
+    showToast("Project deleted.");
+  }
+  function switchProject(id){
+    if(!projects.some(p=>p.id===id)) return;
+    activeProjectId=id;
+    localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+    renderProjectsBar(); renderProjectsList(); renderHistory();
+    thread.querySelectorAll(".gen-card").forEach(c=> c.classList.remove("is-highlight"));
+    showToast(`Switched to "${projects.find(p=>p.id===id).name}".`);
+  }
+  function renderProjectsBar(){
+    if (!projectSelect) return;
+    projectSelect.innerHTML="";
+    projects.forEach(p=>{
+      const o=document.createElement("option");
+      o.value=p.id; o.textContent=`${p.name} · ${p.assets.length}`;
+      if(p.id===activeProjectId) o.selected=true;
+      projectSelect.appendChild(o);
+    });
+    if(projectHintName){
+      const active = getActiveProject();
+      projectHintName.textContent = active ? active.name : "—";
+    }
+    if(projectsSubtitle){
+      const total = projects.reduce((a,p)=>a+p.assets.length,0);
+      projectsSubtitle.textContent = `${projects.length} projects · ${total} assets · local only`;
+    }
+  }
+  function renderProjectsList(){
+    if (!projectsList) return;
+    projectsList.innerHTML="";
+    projects.forEach(proj=>{
+      const row=document.createElement("div");
+      row.className="project-row" + (proj.id===activeProjectId ? " is-active" : "");
+      row.setAttribute("role","listitem");
+      const isActive = proj.id===activeProjectId;
+      row.innerHTML=`
+        <div class="project-row-main" data-id="${escapeAttr(proj.id)}" role="button" tabindex="0" aria-label="Switch to ${escapeAttr(proj.name)}">
+          <span class="project-row-name">${escapeHtml(proj.name)}${isActive ? ' · active' : ''}</span>
+          <span class="project-row-meta">${proj.assets.length} assets · ${escapeHtml(formatTime(proj.updatedAt))} · ${escapeHtml(proj.assets.filter(a=>a.type==="video").length)} videos</span>
+        </div>
+        <div class="project-row-actions">
+          <button class="text-btn text-btn--small" data-action="rename" data-id="${escapeAttr(proj.id)}" type="button">Rename</button>
+          <button class="text-btn text-btn--small text-btn--danger" data-action="delete" data-id="${escapeAttr(proj.id)}" type="button" ${projects.length<=1?"disabled":""}>Delete</button>
+        </div>
+      `;
+      row.querySelector(".project-row-main").addEventListener("click", ()=> switchProject(proj.id));
+      row.querySelector(".project-row-main").addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); switchProject(proj.id); }});
+      row.querySelector('[data-action="rename"]').addEventListener("click", ()=>{
+        const nv = prompt("Rename project:", proj.name);
+        if(nv!=null) renameProject(proj.id, nv);
+      });
+      row.querySelector('[data-action="delete"]').addEventListener("click", ()=> deleteProject(proj.id));
+      projectsList.appendChild(row);
+    });
+  }
+  function migrateHistoryToProjects(){
+    try{
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if(!raw) return;
+      const hist = JSON.parse(raw);
+      if(!Array.isArray(hist) || !hist.length) return;
+      if(localStorage.getItem("shilo_migrated_v1")==="1") return;
+      loadProjects();
+      if(!projects.length){
+        projects=[{ id: "proj_" + Date.now().toString(36), name: "My Studio", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), assets: [] }];
+      }
+      const target = projects[0];
+      let migrated=0;
+      for(const h of hist){
+        if(target.assets.some(a=>a.mediaUrl===h.imageData && a.prompt===h.prompt)) continue;
+        target.assets.unshift({
+          id: h.id || ("asset_" + Date.now().toString(36) + Math.random().toString(36).slice(2,4)),
+          projectId: target.id,
+          type: h.type || (h.videoUrl ? "video":"image"),
+          prompt: h.prompt || "",
+          model: h.model || IMAGE_MODEL,
+          mode: h.mode || "image",
+          aspect: h.aspect || "1:1",
+          resolution: h.resolution || "1K",
+          duration: h.duration || null,
+          audio: h.audio ?? null,
+          mediaUrl: h.imageData || h.videoUrl || h.mediaUrl || "",
+          mime: h.mime || (h.type==="video" ? "video/mp4" : "image/png"),
+          poster: h.poster || null,
+          timestamp: h.timestamp || new Date().toISOString(),
+          tags: Array.isArray(h.tags) ? h.tags : [],
+          title: h.title || h.prompt?.slice(0,40) || "",
+          refThumb: h.refThumb || null
+        });
+        migrated++;
+        if(target.assets.length>48) target.assets = target.assets.slice(0,48);
+      }
+      if(migrated){
+        projects[0].updatedAt = new Date().toISOString();
+        persistProjects();
+        activeProjectId = projects[0].id;
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        localStorage.setItem("shilo_migrated_v1","1");
+        showToast(`Migrated ${migrated} items to "${projects[0].name}".`);
+      } else {
+        localStorage.setItem("shilo_migrated_v1","1");
+      }
+    }catch(e){ console.warn("migrate failed", e); }
+  }
+  function getFilteredAssets(){
+    const proj = getActiveProject();
+    if(!proj) return [];
+    let assets = [...proj.assets];
+    const q = projectSearch.trim().toLowerCase();
+    if(q){
+      assets = assets.filter(a=>{
+        const hay = `${a.prompt||""} ${a.title||""} ${(a.tags||[]).join(" ")} ${a.model||""}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    if(projectFilter==="image") assets = assets.filter(a=>a.type==="image");
+    else if(projectFilter==="video") assets = assets.filter(a=>a.type==="video");
+    if(projectSort==="newest") assets.sort((a,b)=> new Date(b.timestamp)-new Date(a.timestamp));
+    else if(projectSort==="oldest") assets.sort((a,b)=> new Date(a.timestamp)-new Date(b.timestamp));
+    else if(projectSort==="image") assets.sort((a,b)=> (a.type===b.type?0:a.type==="image"?-1:1));
+    else if(projectSort==="video") assets.sort((a,b)=> (a.type===b.type?0:a.type==="video"?-1:1));
+    return assets;
+  }
+  function addAssetToProject(asset){
+    const proj = getActiveProject();
+    if(!proj) return null;
+    asset.id = asset.id || ("asset_" + Date.now().toString(36) + Math.random().toString(36).slice(2,4));
+    asset.projectId = proj.id;
+    asset.timestamp = asset.timestamp || new Date().toISOString();
+    proj.assets.unshift(asset);
+    if(proj.assets.length>96) proj.assets = proj.assets.slice(0,96);
+    proj.updatedAt = new Date().toISOString();
+    persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory();
+    return asset;
+  }
+  function updateProjectAsset(assetId, patch){
+    for(const proj of projects){
+      const a = proj.assets.find(x=>x.id===assetId);
+      if(a){ Object.assign(a, patch); proj.updatedAt=new Date().toISOString(); persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory(); return a; }
+    }
+    return null;
+  }
+  function deleteAsset(assetId){
+    for(const proj of projects){
+      const idx = proj.assets.findIndex(x=>x.id===assetId);
+      if(idx!==-1){ proj.assets.splice(idx,1); proj.updatedAt=new Date().toISOString(); persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory(); showToast("Asset deleted."); return true; }
+    }
+    return false;
+  }
+  function exportProjects(){
+    if(!projects.length){ showToast("No projects to export."); return; }
+    const payload = { version: 1, exportedAt: new Date().toISOString(), projects };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=`shilo-projects-${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showToast("Projects exported.");
+  }
+  function importProjects(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const data=JSON.parse(String(reader.result));
+        const incoming = Array.isArray(data) ? data : data.projects;
+        if(!Array.isArray(incoming) || !incoming.length) throw new Error("No projects found.");
+        let imported=0;
+        for(const p of incoming){
+          if(!p || !p.name) continue;
+          const proj = {
+            id: p.id && !projects.some(x=>x.id===p.id) ? p.id : ("proj_" + Date.now().toString(36) + Math.random().toString(36).slice(2,4) + imported),
+            name: String(p.name).slice(0,40) || `Imported ${imported+1}`,
+            createdAt: p.createdAt || new Date().toISOString(),
+            updatedAt: p.updatedAt || new Date().toISOString(),
+            assets: Array.isArray(p.assets) ? p.assets.slice(0,96).map(a=>({
+              id: a.id || ("asset_" + Math.random().toString(36).slice(2,8)),
+              projectId: "",
+              type: a.type==="video" ? "video" : "image",
+              prompt: String(a.prompt||"").slice(0,4000),
+              model: String(a.model||IMAGE_MODEL),
+              mode: a.mode==="video" ? "video":"image",
+              aspect: a.aspect||"1:1",
+              resolution: a.resolution||"1K",
+              duration: a.duration||null,
+              audio: a.audio??null,
+              mediaUrl: a.mediaUrl||a.imageData||a.videoUrl||"",
+              mime: a.mime|| (a.type==="video"?"video/mp4":"image/png"),
+              timestamp: a.timestamp|| new Date().toISOString(),
+              tags: Array.isArray(a.tags)? a.tags.slice(0,12).map(t=>String(t).slice(0,20)) : [],
+              title: String(a.title||a.prompt||"").slice(0,60),
+              refThumb: a.refThumb||null
+            })).filter(a=>a.mediaUrl) : []
+          };
+          proj.assets.forEach(a=> a.projectId=proj.id);
+          projects.push(proj); imported++;
+        }
+        persistProjects(); ensureActiveProject(); renderProjectsBar(); renderProjectsList(); renderHistory();
+        showToast(`Imported ${imported} project(s).`);
+      }catch(e){ showToast("Import failed: " + (e.message||"invalid JSON"), "error"); }
+    };
+    reader.readAsText(file);
+  }
+  function bindProjectEvents(){
+    projectSelect?.addEventListener("change", e=> switchProject(e.target.value));
+    renameProjectBtn?.addEventListener("click", ()=>{
+      const proj=getActiveProject(); if(!proj) return;
+      const nv=prompt("Rename project:", proj.name);
+      if(nv!=null) renameProject(proj.id, nv);
+    });
+    deleteProjectBtn?.addEventListener("click", ()=>{
+      const proj=getActiveProject(); if(proj) deleteProject(proj.id);
+    });
+    newProjectBtn?.addEventListener("click", ()=>{
+      const name=prompt("New project name:", `Studio ${projects.length+1}`);
+      if(name!=null) createProject(name);
+    });
+    createProjectBtn?.addEventListener("click", ()=>{
+      const v=newProjectNameInput?.value?.trim();
+      if(v) { createProject(v); if(newProjectNameInput) newProjectNameInput.value=""; }
+    });
+    newProjectNameInput?.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); createProjectBtn.click(); }});
+    projectSearchInput?.addEventListener("input", e=>{ projectSearch=e.target.value; renderHistory(); });
+    projectSortSelect?.addEventListener("change", e=>{ projectSort=e.target.value; localStorage.setItem("shilo_projects_sort_v1", projectSort); renderHistory(); });
+    projectFilterSelect?.addEventListener("change", e=>{ projectFilter=e.target.value; localStorage.setItem("shilo_projects_filter_v1", projectFilter); renderHistory(); });
+    projectsToggle?.addEventListener("click", openProjects);
+    projectsCloseBtn?.addEventListener("click", closeProjects);
+    projectsBackdrop?.addEventListener("click", closeProjects);
+    exportProjectsBtn?.addEventListener("click", exportProjects);
+    importProjectsFile?.addEventListener("change", e=>{
+      const f=e.target.files?.[0]; if(f) { importProjects(f); e.target.value=""; }
+    });
+    clearProjectsBtn?.addEventListener("click", ()=>{
+      if(!projects.length) return;
+      if(!confirm("Clear all projects? This will keep a fresh default project. Export first if you want a backup.")) return;
+      projects=[{ id:"proj_"+Date.now().toString(36), name:"My Studio", createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), assets:[] }];
+      activeProjectId=projects[0].id;
+      persistProjects(); localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      renderProjectsBar(); renderProjectsList(); renderHistory();
+      showToast("Projects cleared.");
+    });
+    window.addEventListener("keydown", e=>{
+      if(e.key==="Escape" && projectsPanel?.classList.contains("is-open")) closeProjects();
+    });
+  }
+  function bindModeEvents(){
+    modeSwitch?.addEventListener("click", e=>{
+      const b=e.target.closest(".mode-btn");
+      if(b) setMode(b.dataset.mode);
+    });
+    durationRow?.addEventListener("click", e=>{
+      const p=e.target.closest(".pill[data-duration]");
+      if(p) setVideoDuration(p.dataset.duration);
+    });
+    audioToggle?.addEventListener("change", e=>{
+      audioEnabled = e.target.checked;
+      localStorage.setItem("shilo_audio_v1", audioEnabled?"1":"0");
+      updateComposerFootnote();
+    });
+  }
+  function openProjects(){
+    if(!projectsPanel) return;
+    projectsPanel.classList.add("is-open");
+    projectsPanel.removeAttribute("inert");
+    projectsPanel.setAttribute("aria-hidden","false");
+    projectsBackdrop.hidden=false;
+    projectsToggle?.setAttribute("aria-expanded","true");
+    document.body.style.overflow="hidden";
+    renderProjectsList();
+  }
+  function closeProjects(){
+    if(!projectsPanel) return;
+    projectsPanel.classList.remove("is-open");
+    projectsPanel.setAttribute("aria-hidden","true");
+    projectsPanel.setAttribute("inert","");
+    projectsBackdrop.hidden=true;
+    projectsToggle?.setAttribute("aria-expanded","false");
+    document.body.style.overflow = historyPanel?.classList.contains("is-open") ? "hidden" : "";
   }
 
   function initPolish(){
@@ -746,8 +1308,10 @@
       }
     });
     lightboxDownload.addEventListener("click", () => {
-      const src = lightboxImg.src;
-      const name = lightboxImg.dataset.filename || "shilo-image.png";
+      const isVideo = !lightboxVideo.hidden && lightboxVideo.src;
+      const src = isVideo ? lightboxVideo.src : lightboxImg.src;
+      const name = isVideo ? (lightboxVideo.dataset.filename || "shilo-video.mp4") : (lightboxImg.dataset.filename || "shilo-image.png");
+      if (!src) { showToast("No media to download.", "error"); return; }
       downloadDataUrl(src, name);
     });
 
@@ -832,37 +1396,93 @@
       showToast("The Oxyy proxy is not configured.", "error");
       return;
     }
+    const activeProj = getActiveProject();
+    if (!activeProj){
+      showToast("Create a project first.", "error");
+      ensureActiveProject();
+      return;
+    }
 
     const aspect = aspectRatio;
-    const res = resolution;
+    const res = mode === "video" ? videoResolution : resolution;
     const refForThis = reference ? { ...reference } : null;
 
     if (hero.style.display !== "none") {
       hero.style.display = "none";
     }
 
+    const isVideo = mode === "video";
+    const videoOpts = isVideo ? { model: videoModel, duration: videoDuration, resolution: videoResolution, aspect, audio: audioEnabled } : null;
+
     lastPrompt = prompt;
-    lastSettings = { aspect, res };
+    lastSettings = isVideo ? { mode, model: videoModel, duration: videoDuration, resolution: videoResolution, aspect, audio: audioEnabled } : { mode, aspect, res };
     lastReferenceForRetry = refForThis;
 
-    const userEl = createUserMessage(prompt, refForThis);
+    const userEl = createUserMessage(prompt, refForThis, isVideo ? videoOpts : null);
     thread.appendChild(userEl);
-    const assistantCard = createGeneratingCard(prompt, aspect, res);
+    const assistantCard = createGeneratingCard(prompt, isVideo ? videoOpts : { aspect, res }, isVideo);
     thread.appendChild(assistantCard);
     scrollToBottom();
 
     promptInput.value = "";
     autoGrow(promptInput);
+    if (reference && (!isVideo || (isVideo && refForThis))) {
+      if (!isVideo || confirm("Keep reference for next generation?")) {} else clearReference();
+      if (!isVideo) clearReference();
+    }
+    if (isVideo && refForThis && !isVideo) {}
+    if (!isVideo) { if (reference) clearReference(); } else { if (refForThis) clearReference(); }
     if (reference) clearReference();
 
     setGenerating(true);
     updateKeyIndicator();
 
     try {
-      const result = await generateWithFailover(prompt, refForThis, aspect, res, assistantCard);
-      if (result) {
-        finalizeCardSuccess(assistantCard, result, prompt, aspect, res);
-        addToHistory({ prompt, imageData: result.dataUrl, mime: result.mime, aspect, res, refThumb: refForThis?.dataUrl || null });
+      const idempotencyKey = (crypto.randomUUID && crypto.randomUUID()) || (Date.now().toString(36)+Math.random().toString(36).slice(2));
+      let result;
+      if (isVideo){
+        result = await generateVideoWithFailover(prompt, refForThis, videoOpts, assistantCard, idempotencyKey);
+        if (result) {
+          finalizeCardSuccessVideo(assistantCard, result, prompt, videoOpts);
+          const asset = {
+            type: "video",
+            prompt,
+            model: videoModel,
+            mode: "video",
+            aspect,
+            resolution: videoResolution,
+            duration: Number(videoDuration),
+            audio: audioEnabled,
+            mediaUrl: result.videoUrl,
+            mime: "video/mp4",
+            poster: result.poster || refForThis?.dataUrl || null,
+            tags: [],
+            title: prompt.slice(0,60)
+          };
+          addAssetToProject(asset);
+          addToHistory({ prompt, imageData: result.videoUrl, mime: "video/mp4", aspect, res: videoResolution, refThumb: refForThis?.dataUrl || null, type:"video", model: videoModel, duration: Number(videoDuration), audio: audioEnabled, videoUrl: result.videoUrl });
+          showToast(`Video ready — ${videoModel} · ${videoDuration}s`);
+        }
+      } else {
+        result = await generateWithFailover(prompt, refForThis, aspect, res, assistantCard, idempotencyKey);
+        if (result) {
+          finalizeCardSuccess(assistantCard, result, prompt, aspect, res);
+          const asset = {
+            type: "image",
+            prompt,
+            model: IMAGE_MODEL,
+            mode: "image",
+            aspect,
+            resolution: res,
+            mediaUrl: result.dataUrl,
+            mime: result.mime,
+            poster: null,
+            tags: [],
+            title: prompt.slice(0,60)
+          };
+          addAssetToProject(asset);
+          addToHistory({ prompt, imageData: result.dataUrl, mime: result.mime, aspect, res, refThumb: refForThis?.dataUrl || null, type:"image", model: IMAGE_MODEL });
+        }
       }
     } catch (err) {
       if (!assistantCard.dataset.done) {
@@ -875,41 +1495,58 @@
     }
   }
 
-  function createUserMessage(prompt, ref) {
+  function createUserMessage(prompt, ref, videoOpts) {
     const wrap = document.createElement("div");
     wrap.className = "message";
+    const isVideo = !!videoOpts;
+    const activeProj = getActiveProject();
+    const projName = activeProj ? activeProj.name : "—";
+    const metaPills = isVideo
+      ? `<span class="meta-pill">${escapeHtml(videoOpts.model)} · ${escapeHtml(videoOpts.duration)}s · ${escapeHtml(videoOpts.resolution)} · ${escapeHtml(videoOpts.aspect)}${videoOpts.audio?" · Audio":""}</span>`
+      : `<span class="meta-pill">${escapeHtml(aspectRatio)} · ${escapeHtml(resolution)}</span>`;
     wrap.innerHTML = `
-      <div class="msg-role msg-role--user"><span class="msg-role-dot" aria-hidden="true"></span> You</div>
+      <div class="msg-role msg-role--user"><span class="msg-role-dot" aria-hidden="true"></span> You · <span style="text-transform:none; letter-spacing:-0.01em; font-weight:600; color: rgba(247,242,230,0.62)">${escapeHtml(projName)}</span></div>
       ${ref ? `<img class="msg-ref-thumb" src="${escapeAttr(ref.dataUrl)}" alt="Reference image for: ${escapeAttr(prompt.slice(0,80))}" loading="lazy" />` : ``}
       <p class="msg-prompt">${escapeHtml(prompt)}</p>
       <div class="msg-meta">
-        <span class="meta-pill">${escapeHtml(aspectRatio)} · ${escapeHtml(resolution)}</span>
+        ${metaPills}
         ${ref ? `<span class="meta-pill">Reference · ${escapeHtml(ref.mime.split("/")[1])}</span>` : ``}
         <span class="meta-pill">${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+        <span class="meta-pill">${escapeHtml(isVideo ? "Video" : "Image")} · ${escapeHtml(projName)}</span>
       </div>
     `;
     return wrap;
   }
 
-  function createGeneratingCard(prompt, aspect, res) {
+  function createGeneratingCard(prompt, opts, isVideo) {
     const el = document.createElement("div");
     el.className = "message";
+    let aspect, res, modelLabel, subText, titleText;
+    if (isVideo){
+      aspect = opts.aspect; res = opts.resolution; modelLabel = VIDEO_MODELS.find(m=>m.id===opts.model)?.label || opts.model;
+      subText = `${escapeHtml(opts.model)} · ${escapeHtml(String(opts.duration))}s · ${escapeHtml(opts.resolution)} · ${escapeHtml(opts.aspect)}${opts.audio?" · Audio":""}`;
+      titleText = `Generating video — ${modelLabel}`;
+    } else {
+      aspect = opts.aspect; res = opts.res; modelLabel = DISPLAY_MODEL;
+      subText = `${escapeHtml(aspect)} · ${escapeHtml(res)} · ${escapeHtml(DISPLAY_MODEL)} · Oxyy`;
+      titleText = "Generating";
+    }
     el.innerHTML = `
-      <div class="msg-role msg-role--assistant"><span class="msg-role-dot" aria-hidden="true"></span> Shilo Studio · ${escapeHtml(DISPLAY_MODEL)}</div>
-      <div class="gen-card" data-state="loading">
-        <div class="gen-card-media" aria-busy="true" aria-label="Generating image">
+      <div class="msg-role msg-role--assistant"><span class="msg-role-dot" aria-hidden="true"></span> Shilo Studio · ${escapeHtml(isVideo ? (VIDEO_MODELS.find(m=>m.id===opts.model)?.label || "Video") : DISPLAY_MODEL)}${isVideo && opts.audio ? " · Audio" : ""}</div>
+      <div class="gen-card ${isVideo ? "gen-card--video" : ""}" data-state="loading">
+        <div class="gen-card-media" aria-busy="true" aria-label="${isVideo ? "Generating video" : "Generating image"}">
           <div class="gen-card-shimmer" aria-hidden="true"></div>
           <div class="gen-loader">
             <div class="gen-loader-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="gen-loader-text">Composing with ${escapeHtml(DISPLAY_MODEL)}…</div>
-            <div class="gen-loader-sub">${escapeHtml(prompt.slice(0,72))}${prompt.length>72?"…":""} · ${escapeHtml(aspect)} · ${escapeHtml(res)} · 60 credits</div>
+            <div class="gen-loader-text">${isVideo ? `Composing video with ${escapeHtml(modelLabel)}…` : `Composing with ${escapeHtml(DISPLAY_MODEL)}…`}</div>
+            <div class="gen-loader-sub">${escapeHtml(prompt.slice(0,72))}${prompt.length>72?"…":""} · ${subText}</div>
           </div>
           <div class="gen-progress" aria-hidden="true"><div class="gen-progress-bar"></div></div>
         </div>
         <div class="gen-card-footer">
           <div class="gen-card-info">
-            <span class="gen-card-title">Generating</span>
-            <span class="gen-card-sub">${escapeHtml(aspect)} · ${escapeHtml(res)} · ${escapeHtml(DISPLAY_MODEL)} · Oxyy</span>
+            <span class="gen-card-title">${titleText}</span>
+            <span class="gen-card-sub">${subText} · ${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
           </div>
           <div class="gen-card-actions">
             <button class="btn btn--subtle" type="button" disabled aria-label="Generating">Working…</button>
@@ -966,6 +1603,67 @@
     });
     scrollToBottom();
     requestAnimationFrame(()=> {
+      setTimeout(()=>{
+        try{ window._dopamineSuccess?.(genCard); }catch{}
+        try{ window._hapticPop?.(1); }catch{}
+      }, 90);
+    });
+  }
+
+  function finalizeCardSuccessVideo(card, result, prompt, opts){
+    const genCard = card.querySelector(".gen-card");
+    if (!genCard) return;
+    card.dataset.done = "success";
+    const safePrompt = escapeAttr(prompt.slice(0,140));
+    genCard.dataset.state = "done";
+    const videoUrl = result.videoUrl;
+    const poster = result.poster || "";
+    const modelLabel = VIDEO_MODELS.find(m=>m.id===opts.model)?.label || opts.model;
+    genCard.innerHTML = `
+      <div class="gen-card-media">
+        <video src="${escapeAttr(videoUrl)}" poster="${escapeAttr(poster)}" controls playsinline preload="metadata" style="width:100%; border-radius:14px; background:#0B0B0D"></video>
+        <div class="gen-card-shimmer" aria-hidden="true" style="display:none"></div>
+      </div>
+      <div class="gen-card-footer">
+        <div class="gen-card-info">
+          <span class="gen-card-title" title="${safePrompt}">${escapeHtml(prompt.slice(0,56))}${prompt.length>56?"…":""}</span>
+          <span class="gen-card-sub">${escapeHtml(opts.model)} · ${escapeHtml(String(opts.duration))}s · ${escapeHtml(opts.resolution)} · ${escapeHtml(opts.aspect)}${opts.audio?" · Audio":""} · ${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+        </div>
+        <div class="gen-card-actions">
+          <button class="btn btn--ghost" type="button" data-action="retry" aria-label="Retry generation">Retry</button>
+          <button class="btn btn--primary" type="button" data-action="download" aria-label="Download video">Download</button>
+          <button class="btn btn--ghost" type="button" data-action="open" aria-label="Open in lightbox">Open</button>
+        </div>
+      </div>
+      <div class="asset-card-meta-row" style="padding:0 14px 10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+        <span class="meta-pill">Project · ${escapeHtml(getActiveProject()?.name||"—")}</span>
+        <span class="meta-pill">${escapeHtml(modelLabel)}</span>
+      </div>
+    `;
+    const videoEl = genCard.querySelector("video");
+    videoEl.addEventListener("click", ()=> openLightbox(videoUrl, prompt, "video"));
+    genCard.querySelector('[data-action="download"]').addEventListener("click", ()=>{
+      const filename = `shilo-${Date.now()}-${opts.aspect.replace(":","x")}-${opts.duration}s.mp4`;
+      downloadDataUrl(videoUrl, filename);
+    });
+    genCard.querySelector('[data-action="retry"]').addEventListener("click", ()=>{
+      if(lastPrompt){
+        promptInput.value = lastPrompt;
+        if(lastSettings){
+          if(lastSettings.mode==="video"){
+            setMode("video"); setVideoModel(lastSettings.model); setVideoDuration(lastSettings.duration); setVideoResolution(lastSettings.resolution); setAspect(lastSettings.aspect);
+            if(typeof lastSettings.audio==="boolean"){ audioEnabled=lastSettings.audio; if(audioToggle) audioToggle.checked=audioEnabled; }
+          } else {
+            setMode("image"); setAspect(lastSettings.aspect); setResolution(lastSettings.res);
+          }
+        }
+        if(lastReferenceForRetry){ reference={...lastReferenceForRetry}; showReference(); }
+        autoGrow(promptInput); submitPrompt();
+      }
+    });
+    genCard.querySelector('[data-action="open"]').addEventListener("click", ()=> openLightbox(videoUrl, prompt, "video"));
+    scrollToBottom();
+    requestAnimationFrame(()=>{
       setTimeout(()=>{
         try{ window._dopamineSuccess?.(genCard); }catch{}
         try{ window._hapticPop?.(1); }catch{}
@@ -1066,7 +1764,7 @@
   }
 
   // ——— Oxyy + Failover ———
-  async function generateWithFailover(prompt, ref, aspect, res, card) {
+  async function generateWithFailover(prompt, ref, aspect, res, card, idempotencyKey) {
     const ordered = getOrderedKeyIndices();
     let lastError = null;
     let transientCount = 0;
@@ -1085,14 +1783,18 @@
       }
 
       try {
-        const result = await callOxyy(prompt, ref, aspect, res, KEYS[keyIdx]);
+        const result = await callOxyy(prompt, ref, aspect, res, idempotencyKey);
         keyState[keyIdx].lastSuccess = Date.now();
         keyState[keyIdx].failures = 0;
         keyState[keyIdx].cooldownUntil = 0;
         lastSuccessfulKey = keyIdx;
         busyKey = -1;
         updateKeyIndicator();
-        showToast("Image ready — 60 credits used.");
+        if (result.proxy){
+          showToast(`Image ready — Key ${result.proxy.keyIndex}/${result.proxy.totalKeys} · ${result.proxy.model} · 60 credits used.`);
+        } else {
+          showToast("Image ready — 60 credits used.");
+        }
         return result;
       } catch (e) {
         lastError = e;
@@ -1248,11 +1950,10 @@
     return `${w}x${h}`;
   }
 
-  async function callOxyy(prompt, ref, aspect, res, apiKey) {
+  async function callOxyy(prompt, ref, aspect, res, idempotencyKey) {
     const url = `${BASE_URL}/images/generations`;
     const size = getOxyySize(aspect, res);
 
-    // Build OpenAI-compatible body
     const body = {
       model: MODEL,
       prompt: prompt,
@@ -1261,36 +1962,34 @@
       response_format: "b64_json"
     };
 
-    // Attach reference image where supported — try multiple field names for max compat
-    // Oxyy nano-banana-2 supports image-to-image; we send as data URL
     if (ref && ref.base64) {
       const dataUrl = ref.dataUrl || `data:${ref.mime || "image/png"};base64,${ref.base64}`;
-      // Primary fields for Oxyy / OpenAI-compatible proxies
       body.image = dataUrl;
-      // Also provide alternative fields some proxies expect
       body.reference_image = dataUrl;
       body.input_image = dataUrl;
       body.images = [dataUrl];
-      // Hint to model that this is an edit
-      // Keep prompt as-is; Oxyy will use image as reference
     }
 
-    // Also send aspect/res hints as extra fields for proxies that respect them
     body.aspect_ratio = aspect;
     body.resolution = res;
+
+    const headers = { "Content-Type": "application/json" };
+    if (idempotencyKey) headers["X-Idempotency-Key"] = idempotencyKey;
 
     let resp;
     try {
       resp = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(body)
       });
     } catch (e) {
       throw { status: 0, code: "network", message: "Couldn't reach Oxyy. Check your connection and try again.", title: "Couldn't reach Oxyy", rawMessage: String(e) };
     }
+
+    const proxyIndex = resp.headers.get("x-proxy-key-index");
+    const proxyTotal = resp.headers.get("x-proxy-total-keys");
+    const proxyModel = resp.headers.get("x-proxy-model");
 
     if (!resp.ok) {
       let data = null;
@@ -1364,7 +2063,7 @@
       } catch {}
       // If fetch failed, keep URL as dataUrl
       if (!dataUrl.startsWith("data:")) {
-        return { dataUrl, mime, base64: b64, text: extractOxyyText(data) || "", raw: data, isUrl: true };
+        return { dataUrl, mime, base64: b64, text: extractOxyyText(data) || "", raw: data, isUrl: true, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || MODEL } : null };
       }
     } else {
       b64 = b64.replace(/\s+/g, "");
@@ -1375,7 +2074,180 @@
     }
 
     const text = extractOxyyText(data) || "";
-    return { dataUrl, mime, base64: b64, text, raw: data };
+    return { dataUrl, mime, base64: b64, text, raw: data, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || MODEL } : null };
+  }
+
+  async function callOxyyVideo(prompt, ref, opts, idempotencyKey){
+    const url = `${BASE_URL}/videos/generations`;
+    const body = {
+      model: opts.model,
+      prompt: prompt,
+      duration: Number(opts.duration) || 4,
+      resolution: opts.resolution || "720p",
+      aspect_ratio: opts.aspect || aspectRatio,
+      aspectRatio: opts.aspect || aspectRatio
+    };
+    if (opts.audio === false) body.generate_audio = false;
+    else if (opts.audio === true) body.generate_audio = true;
+    if (opts.audio != null) body.audio = !!opts.audio;
+
+    if (ref && ref.base64){
+      const dataUrl = ref.dataUrl || `data:${ref.mime||"image/png"};base64,${ref.base64}`;
+      body.image = dataUrl;
+      body.image_base64 = ref.base64;
+      body.input_image = dataUrl;
+      body.reference_image = dataUrl;
+      body.imageBase64 = ref.base64;
+    }
+    body.n = 1;
+
+    const headers = { "Content-Type": "application/json" };
+    if (idempotencyKey) headers["X-Idempotency-Key"] = idempotencyKey;
+
+    let resp;
+    try{
+      resp = await fetch(url, { method:"POST", headers, body: JSON.stringify(body) });
+    } catch(e){
+      throw { status:0, code:"network", message:"Couldn't reach Oxyy. Check your connection and try again.", title:"Couldn't reach Oxyy", rawMessage: String(e) };
+    }
+
+    const proxyIndex = resp.headers.get("x-proxy-key-index");
+    const proxyTotal = resp.headers.get("x-proxy-total-keys");
+    const proxyModel = resp.headers.get("x-proxy-model");
+
+    if (!resp.ok){
+      let data=null; let text="";
+      try{ text=await resp.text(); data=text ? JSON.parse(text):null; }catch{}
+      const rawMsg = data?.error?.message || data?.message || text || `Request failed (${resp.status})`;
+      let retryDelay="";
+      try{
+        const ra = resp.headers.get("retry-after") || resp.headers.get("Retry-After");
+        if(ra) retryDelay = ra+"s";
+      }catch{}
+      const sanitized = sanitizeApiMessage(rawMsg);
+      throw { status: resp.status, message: sanitized, rawMessage: rawMsg, title: titleForStatus(resp.status), code: String(resp.status), raw: data, retryDelay, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : null };
+    }
+
+    let data;
+    try{ data = await resp.json(); }catch{ throw { status:502, message:"Received a malformed response from Oxyy. Please try again.", title:"Unexpected response" }; }
+
+    const videoUrl = data?.video_url || data?.videoUrl || data?.url || data?.data?.video_url || data?.output?.[0]?.url || data?.data?.url;
+    const jobId = data?.id || data?.job_id || data?.task_id;
+    const status = data?.status || data?.state;
+
+    if (videoUrl){
+      return { videoUrl, poster: ref?.dataUrl || null, mime:"video/mp4", raw:data, status: status || "completed", proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : (data._shilo_proxy||null), jobId };
+    }
+    if (jobId && (status==="queued" || status==="in_progress" || status==="processing" || status==="running")){
+      return { videoUrl: null, jobId, status, raw:data, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : null };
+    }
+    const foundVideo = data?.video_url || data?.url;
+    if (foundVideo) return { videoUrl: foundVideo, raw:data, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : null };
+    const maybeUrl = extractOxyyVideo(data);
+    if (maybeUrl) return { videoUrl: maybeUrl, raw:data, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : null };
+    return { videoUrl: videoUrl || null, raw:data, status, jobId, proxy: proxyIndex ? { keyIndex: parseInt(proxyIndex,10), totalKeys: parseInt(proxyTotal||"1",10), model: proxyModel || opts.model } : null };
+  }
+
+  function extractOxyyVideo(data){
+    try{
+      if (data?.video_url && String(data.video_url).startsWith("http")) return data.video_url;
+      if (data?.videoUrl && String(data.videoUrl).startsWith("http")) return data.videoUrl;
+      if (data?.data?.video_url && String(data.data.video_url).startsWith("http")) return data.data.video_url;
+      if (data?.data?.[0]?.video_url) return data.data[0].video_url;
+      if (data?.output?.[0]?.url) return data.output[0].url;
+      if (typeof data?.url === "string" && data.url.startsWith("http") && data.url.includes(".mp4")) return data.url;
+    }catch{}
+    return null;
+  }
+
+  async function generateVideoWithFailover(prompt, ref, opts, card, idempotencyKey){
+    const ordered = getOrderedKeyIndices();
+    let lastError=null; let transientCount=0;
+    for(let attempt=0; attempt<ordered.length; attempt++){
+      const keyIdx=ordered[attempt];
+      busyKey=keyIdx; updateKeyIndicator();
+      const sub=card.querySelector(".gen-loader-sub");
+      if(attempt>0 && sub){ sub.textContent=`Trying another Oxyy key… (${attempt+1}/${ordered.length})`; sub.animate?.([{opacity:0, transform:"translateY(4px)"},{opacity:1, transform:"none"}],{duration:220,easing:"ease-out"}); }
+      if(attempt>0) showToast("Trying another Oxyy key…");
+      try{
+        const result = await callOxyyVideo(prompt, ref, opts, idempotencyKey);
+        if (result.videoUrl){
+          keyState[keyIdx].lastSuccess=Date.now(); keyState[keyIdx].failures=0; keyState[keyIdx].cooldownUntil=0; lastSuccessfulKey=keyIdx; busyKey=-1; updateKeyIndicator();
+          if(result.proxy) showToast(`Video ready — Key ${result.proxy.keyIndex}/${result.proxy.totalKeys} · ${result.proxy.model}`);
+          else showToast("Video ready.");
+          return result;
+        }
+        if (result.jobId){
+          const sub2=card.querySelector(".gen-loader-sub");
+          if(sub2) sub2.textContent=`Queued · ${opts.model} · polling…`;
+          const poll = await pollVideoUntilDone(result.jobId, result.proxy ? result.proxy.keyIndex-1 : keyIdx, opts);
+          if(poll.videoUrl){
+            keyState[keyIdx].lastSuccess=Date.now(); keyState[keyIdx].failures=0; keyState[keyIdx].cooldownUntil=0; lastSuccessfulKey=keyIdx; busyKey=-1; updateKeyIndicator();
+            showToast("Video ready — polling complete.");
+            return poll;
+          }
+          throw { status: 500, message: poll.error || "Video generation failed.", code:"video_failed" };
+        }
+        throw { status: 502, message:"No video was returned. Try rephrasing or use a different model.", code:"no_video" };
+      }catch(e){
+        lastError=e;
+        const status=e.status||0;
+        const isTransient=isTransientError(status, e.code);
+        const isAuth=status===401||status===403;
+        const isBadRequest=status===400;
+        keyState[keyIdx].lastFailure=Date.now(); keyState[keyIdx].failures++;
+        let cd=null;
+        if(e.retryDelay){ const m=String(e.retryDelay).match(/(\d+)/); if(m) cd=(parseInt(m[1],10)*1000)+800; }
+        if(isTransient){ transientCount++; const base=cd ?? COOLDOWN[status] ?? (e.code==="network"?COOLDOWN.network:COOLDOWN.generic); keyState[keyIdx].cooldownUntil=Date.now()+base; }
+        else if(isAuth||isBadRequest){ keyState[keyIdx].cooldownUntil=Date.now()+(cd ?? 30_000); }
+        else { keyState[keyIdx].cooldownUntil=Date.now()+(cd ?? 12_000); }
+        busyKey=-1; updateKeyIndicator();
+        const isLast=attempt===ordered.length-1;
+        if(isBadRequest && !isTransient && attempt>=1) break;
+        if(isLast) break;
+        if(isTransient||isAuth) await sleep(420+Math.random()*300);
+        else if(isBadRequest) await sleep(280);
+        else await sleep(350);
+      }
+    }
+    busyKey=-1; updateKeyIndicator();
+    const final=normalizeFinalError(lastError, transientCount, ordered.length);
+    finalizeCardError(card, final);
+    throw final;
+  }
+
+  async function pollVideoUntilDone(jobId, keyIdx, opts){
+    const maxWaitMs=300_000;
+    const start=Date.now();
+    let interval=5000;
+    const keyForPoll = KEYS[keyIdx] || KEYS[0];
+    while(Date.now()-start < maxWaitMs){
+      await new Promise(r=> setTimeout(r, interval));
+      try{
+        const resp = await fetch(`${BASE_URL}/videos/generations/${encodeURIComponent(jobId)}`, { headers: {} });
+        if(!resp.ok){
+          if(resp.status===404) return { error:"Video job not found.", videoUrl:null };
+          const txt=await resp.text().catch(()=> "");
+          if(resp.status===500 || resp.status===503){ interval=Math.min(interval+1000,8000); continue; }
+          return { error: sanitizeApiMessage(txt) || `Poll failed (${resp.status})`, videoUrl:null };
+        }
+        let data=null;
+        try{ data=await resp.json(); }catch{}
+        const status=data?.status || data?.state || data?.data?.status || "";
+        const videoUrl=data?.video_url || data?.videoUrl || data?.url || data?.data?.video_url || data?.output?.[0]?.url;
+        if(status==="completed" || status==="succeeded" || status==="success" || videoUrl){
+          if(videoUrl) return { videoUrl, raw:data };
+          if(status==="completed") return { videoUrl: videoUrl || null, raw:data };
+        }
+        if(status==="failed" || status==="error" || status==="cancelled"){
+          const err=data?.error?.message || data?.message || "Video generation failed.";
+          return { error: sanitizeApiMessage(err), videoUrl:null };
+        }
+      }catch(e){
+        interval=Math.min(interval+1000,8000);
+      }
+    }
+    return { error:"Video generation timed out. Please try again.", videoUrl:null };
   }
 
   function blobToBase64(blob) {
@@ -1582,39 +2454,82 @@
   }
 
   function renderHistory() {
-    historyGrid.innerHTML = "";
-    historyCount.hidden = history.length === 0;
-    historyCount.textContent = String(history.length);
-    historySubtitle.textContent = history.length ? `${history.length} saved · local only` : "Local only";
-    if (!history.length) {
-      historyEmpty.hidden = false;
-      historyEmpty.style.display = "";
-      return;
+    const proj = getActiveProject();
+    const assets = getFilteredAssets();
+    const totalInProject = proj ? proj.assets.length : 0;
+    const visibleCount = assets.length;
+
+    if (historyGrid){
+      historyGrid.innerHTML = "";
+      const shouldShowLegacy = false;
+      const displayEmpty = visibleCount===0;
+      historyCount.hidden = totalInProject === 0;
+      historyCount.textContent = String(totalInProject);
+      if (historySubtitle){
+        if (proj) historySubtitle.textContent = `${totalInProject} assets · ${proj.name} · local only`;
+        else historySubtitle.textContent = "Local only";
+      }
+      if (displayEmpty) {
+        if (historyEmpty){
+          historyEmpty.hidden = false;
+          historyEmpty.style.display = "";
+          const q = projectSearch.trim();
+          if (q) historyEmpty.textContent = `No assets match "${q}" in ${proj?proj.name:"project"}.`;
+          else if (projectFilter!=="all") historyEmpty.textContent = `No ${projectFilter}s in this project yet.`;
+          else historyEmpty.textContent = "No generations yet. Your images and videos will appear here.";
+        }
+        return;
+      }
+      if (historyEmpty){ historyEmpty.hidden = true; historyEmpty.style.display = "none"; }
+
+      assets.forEach((item, idx) => {
+        const el = document.createElement("div");
+        el.className = "history-item" + (item.type==="video" ? " history-item--video" : "");
+        el.setAttribute("role", "listitem");
+        el.tabIndex = 0;
+        el.setAttribute("aria-label", `${item.type==="video" ? "Video" : "Image"}: ${item.prompt.slice(0,60)}`);
+        const isVideo = item.type==="video";
+        const thumb = isVideo
+          ? `<video src="${escapeAttr(item.mediaUrl)}" poster="${escapeAttr(item.poster||"")}" muted loop playsinline preload="metadata" style="width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#0B0B0D"></video><span style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:36px; height:36px; border-radius:50%; background:rgba(0,0,0,0.52); backdrop-filter:blur(8px); display:grid; place-items:center; color:#fff; border:0.5px solid rgba(255,255,255,0.14); font-size:14px">▶</span>`
+          : `<img src="${escapeAttr(item.mediaUrl)}" alt="${escapeAttr(item.prompt.slice(0,80))}" loading="lazy" style="width:100%; aspect-ratio:1; object-fit:cover; display:block" />`;
+        const title = item.title || item.prompt.slice(0,38);
+        const tagHtml = (item.tags && item.tags.length) ? `<span class="history-item-time" style="display:flex; gap:4px; flex-wrap:wrap; margin-top:4px">${item.tags.map(t=>`<span class="asset-tag" style="font-size:9.5px; padding:1px 6px">${escapeHtml(t)}</span>`).join("")}</span>` : "";
+        el.innerHTML = `
+          <div style="position:relative; overflow:hidden; border-radius:14px 14px 0 0">${thumb}</div>
+          <div class="history-item-meta" style="position:static; background: linear-gradient(to top, rgba(0,0,0,0.04), transparent); padding:8px 8px 6px; backdrop-filter:none">
+            <span class="history-item-prompt" title="${escapeAttr(item.title||item.prompt)}">${escapeHtml(title)}${(item.title||item.prompt).length>38?"…":""}</span>
+            <span class="history-item-time">${escapeHtml(formatTime(item.timestamp))} · ${escapeHtml(item.model|| (isVideo?videoModel:IMAGE_MODEL))} · ${escapeHtml(item.aspect||"—")} · ${escapeHtml(item.resolution||"—")}${isVideo && item.duration ? ` · ${item.duration}s` : ""}${isVideo && item.audio ? " · Audio":""}</span>
+            ${tagHtml}
+            <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap">
+              <button class="text-btn" style="height:24px; padding:0 8px; font-size:10.5px" data-action="open" type="button">Open</button>
+              <button class="text-btn" style="height:24px; padding:0 8px; font-size:10.5px" data-action="download" type="button">Download</button>
+              <button class="text-btn" style="height:24px; padding:0 8px; font-size:10.5px" data-action="rename" type="button">Rename</button>
+              <button class="text-btn text-btn--danger" style="height:24px; padding:0 8px; font-size:10.5px" data-action="delete" type="button">Delete</button>
+            </div>
+          </div>
+        `;
+        el.querySelector('[data-action="open"]').addEventListener("click", (e)=>{ e.stopPropagation(); openLightbox(item.mediaUrl, item.prompt, item.type); });
+        el.querySelector('[data-action="download"]').addEventListener("click", (e)=>{ e.stopPropagation(); const fn=`shilo-${item.type}-${Date.now()}-${(item.aspect||"1x1").replace(":","x")}.${item.type==="video"?"mp4":"png"}`; downloadDataUrl(item.mediaUrl, fn); });
+        el.querySelector('[data-action="rename"]').addEventListener("click", (e)=>{
+          e.stopPropagation();
+          const nv=prompt("Rename asset:", item.title||item.prompt.slice(0,40));
+          if(nv!=null){ updateProjectAsset(item.id, { title: nv.trim().slice(0,60) }); }
+        });
+        el.querySelector('[data-action="delete"]').addEventListener("click", (e)=>{
+          e.stopPropagation();
+          if(confirm(`Delete this ${item.type}?`)){ deleteAsset(item.id); }
+        });
+        el.addEventListener("click", () => openLightbox(item.mediaUrl, item.prompt, item.type));
+        el.addEventListener("keydown", (e) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openLightbox(item.mediaUrl, item.prompt, item.type); }});
+        el.style.animationDelay = `${Math.min(idx*28, 220)}ms`;
+        historyGrid.appendChild(el);
+      });
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && assets.length){
+        historyCount.animate?.([{transform:"scale(1)"},{transform:"scale(1.08)"},{transform:"scale(1)"}],{duration:340, easing:"cubic-bezier(.22,1,.36,1)"});
+        historyGrid.animate?.([{opacity:0.96},{opacity:1}],{duration:220, easing:"ease-out"});
+      }
     }
-    historyEmpty.hidden = true;
-    historyEmpty.style.display = "none";
-    history.forEach((item, idx) => {
-      const el = document.createElement("div");
-      el.className = "history-item";
-      el.setAttribute("role", "listitem");
-      el.tabIndex = 0;
-      el.setAttribute("aria-label", `Generated image: ${item.prompt.slice(0,60)}`);
-      el.innerHTML = `
-        <img src="${escapeAttr(item.imageData)}" alt="${escapeAttr(item.prompt.slice(0,80))}" loading="lazy" />
-        <div class="history-item-meta">
-          <span class="history-item-prompt">${escapeHtml(item.prompt.slice(0,38))}${item.prompt.length>38?"…":""}</span>
-          <span class="history-item-time">${escapeHtml(formatTime(item.timestamp))} · ${escapeHtml(item.aspect)} · ${escapeHtml(item.resolution)}</span>
-        </div>
-      `;
-      el.addEventListener("click", () => openLightbox(item.imageData, item.prompt));
-      el.addEventListener("keydown", (e) => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); openLightbox(item.imageData, item.prompt); }});
-      el.style.animationDelay = `${Math.min(idx*28, 220)}ms`;
-      historyGrid.appendChild(el);
-    });
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && history.length){
-      historyCount.animate?.([{transform:"scale(1)"},{transform:"scale(1.08)"},{transform:"scale(1)"}],{duration:340, easing:"cubic-bezier(.22,1,.36,1)"});
-      historyGrid.animate?.([{opacity:0.96},{opacity:1}],{duration:220, easing:"ease-out"});
-    }
+    renderProjectsBar();
   }
 
   function formatTime(iso){
@@ -1661,10 +2576,27 @@
     document.body.style.overflow = "";
   }
 
-  function openLightbox(src, caption){
-    lightboxImg.src = src;
-    lightboxImg.alt = caption ? `Generated image: ${caption.slice(0,120)}` : "Generated image";
-    lightboxImg.dataset.filename = `shilo-${Date.now()}.png`;
+  function openLightbox(src, caption, kind){
+    const isVideo = kind==="video" || (typeof src==="string" && (src.includes(".mp4") || src.startsWith("blob:") && caption && caption.toLowerCase().includes("video")) ) || (src && String(src).startsWith("http") && String(src).includes("video"));
+    const detectVideo = kind==="video" || (src && (String(src).endsWith(".mp4") || String(src).includes("video")) && !String(src).startsWith("data:image"));
+    const useVideo = kind==="video" ? true : detectVideo ? true : /\.(mp4|webm|mov)(\?|$)/i.test(String(src));
+    if (useVideo){
+      lightboxImg.hidden = true;
+      lightboxImg.removeAttribute("src");
+      lightboxVideo.hidden = false;
+      lightboxVideo.src = src;
+      lightboxVideo.poster = "";
+      lightboxVideo.dataset.filename = `shilo-${Date.now()}.mp4`;
+      lightboxVideo.load();
+    } else {
+      lightboxVideo.hidden = true;
+      try{ lightboxVideo.pause(); }catch{}
+      lightboxVideo.removeAttribute("src");
+      lightboxImg.hidden = false;
+      lightboxImg.src = src;
+      lightboxImg.alt = caption ? `Generated ${useVideo?"video":"image"}: ${caption.slice(0,120)}` : `Generated ${useVideo?"video":"image"}`;
+      lightboxImg.dataset.filename = `shilo-${Date.now()}.${useVideo?"mp4":"png"}`;
+    }
     lightboxCaption.textContent = caption || "";
     lightbox.classList.add("is-open");
     lightbox.setAttribute("aria-hidden","false");
@@ -1674,8 +2606,17 @@
   function closeLightbox(){
     lightbox.classList.remove("is-open");
     lightbox.setAttribute("aria-hidden","true");
-    document.body.style.overflow = historyPanel.classList.contains("is-open") ? "hidden" : "";
-    setTimeout(()=> { if(!lightbox.classList.contains("is-open")) lightboxImg.removeAttribute("src"); }, 300);
+    const bothOpen = (historyPanel && historyPanel.classList.contains("is-open")) || (projectsPanel && projectsPanel.classList.contains("is-open"));
+    document.body.style.overflow = bothOpen ? "hidden" : "";
+    setTimeout(()=> {
+      if(!lightbox.classList.contains("is-open")){
+        try{ lightboxVideo.pause(); }catch{}
+        lightboxImg.removeAttribute("src");
+        lightboxVideo.removeAttribute("src");
+        lightboxImg.hidden = false;
+        lightboxVideo.hidden = true;
+      }
+    }, 300);
   }
 
   function downloadDataUrl(dataUrl, filename){
@@ -1737,6 +2678,8 @@
   window.ShiloWorkspace = {
     getHistory: () => [...history],
     clearHistory: () => { history=[]; persistHistory(); renderHistory(); },
-    getSettings: () => ({ aspectRatio, resolution, model: MODEL, displayModel: DISPLAY_MODEL, baseUrl: BASE_URL, keysConfigured: KEYS.length })
+    getProjects: () => JSON.parse(JSON.stringify(projects)),
+    getActiveProject: () => getActiveProject() ? JSON.parse(JSON.stringify(getActiveProject())) : null,
+    getSettings: () => ({ mode, imageModel: IMAGE_MODEL, videoModel, videoDuration, videoResolution, audioEnabled, aspectRatio, resolution, model: MODEL, displayModel: DISPLAY_MODEL, baseUrl: BASE_URL, keysConfigured: KEYS.length, projects: projects.length })
   };
 })();
