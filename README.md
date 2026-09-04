@@ -167,7 +167,7 @@ Content-Type: application/json
 - `image` (data URL) is only added when a reference image is attached; also sent as `reference_image`/`input_image`/`images` for compatibility.
 - `response_format: "b64_json"` requests base64 inline.
 
-**Response parsing** is robust for OpenAI shape:
+**Response parsing** is robust for OpenAI shape:.
 
 - Primary: `data[0].b64_json` → `data:image/png;base64,...`
 - Fallbacks: `data[0].url` (fetched to base64 best-effort), `data[0].b64Json`, `images[]`, `b64_json`, deep scan
