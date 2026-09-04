@@ -140,7 +140,7 @@
     generic: 10_000
   };
 
-  function init() {
+  async function init() {
     renderRatioPills();
     renderVideoModelPills();
     renderDurationPills();
@@ -148,6 +148,18 @@
     updateKeyIndicator();
     loadHistory();
     loadProjects();
+    try{
+      const hasIDB = await loadProjectsDurable();
+      if (hasIDB){
+        loadProjects();
+        const idbProjects = await idbGet(IDB_PROJECTS_KEY);
+        if (idbProjects && Array.isArray(idbProjects) && idbProjects.length){
+          projects = idbProjects;
+          const meta = await idbGet(IDB_META_KEY);
+          if (meta && meta.activeProjectId) activeProjectId = meta.activeProjectId;
+        }
+      }
+    }catch{}
     migrateHistoryToProjects();
     ensureActiveProject();
     renderProjectsBar();
@@ -170,6 +182,7 @@
     if (heroEyebrow) heroEyebrow.innerHTML = '<span class="eyebrow-dot" aria-hidden="true"></span><span class="eyebrow-text">Available now — image studio for obsessives</span><span class="eyebrow-hairline" aria-hidden="true"></span>';
     initPolish();
     initMacDopamine();
+    persistProjectsDurable();
   }
 
   function renderMode(){
@@ -311,14 +324,21 @@
     projects = [];
   }
   function persistProjects(){
+    let lsOk=true;
     try{
       localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-      return true;
     } catch(e){
-      if (isQuotaExceeded(e)) return handleProjectsQuotaExceeded();
-      showToast("Could not save projects locally.", "error");
-      return false;
+      lsOk=false;
+      if (isQuotaExceeded(e)){
+        handleProjectsQuotaExceeded();
+      } else {
+        showToast("LocalStorage full — using durable IndexedDB (holds much more).", "info");
+      }
     }
+    persistProjectsDurable();
+    try{ localStorage.setItem("shilo_projects_backup_at", new Date().toISOString()); }catch{}
+    if (!lsOk) showToast("Saved to durable storage (IndexedDB) — holds 50× more than localStorage. Export JSON to back up.", "info");
+    return true;
   }
   function handleProjectsQuotaExceeded(){
     let cloned = JSON.parse(JSON.stringify(projects));
@@ -531,9 +551,28 @@
     return null;
   }
   function deleteAsset(assetId){
+    let pairIdToRemove=null;
+    for(const proj of projects){
+      const a = proj.assets.find(x=>x.id===assetId);
+      if(a) pairIdToRemove = a.pairId || null;
+    }
     for(const proj of projects){
       const idx = proj.assets.findIndex(x=>x.id===assetId);
-      if(idx!==-1){ proj.assets.splice(idx,1); proj.updatedAt=new Date().toISOString(); persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory(); showToast("Asset deleted."); return true; }
+      if(idx!==-1){
+        const removed = proj.assets[idx];
+        proj.assets.splice(idx,1); proj.updatedAt=new Date().toISOString();
+        if (pairIdToRemove){
+          [...thread.querySelectorAll(`[data-pair-id="${CSS.escape(pairIdToRemove)}"]`)].forEach(el=>{
+            el.style.transition="opacity .18s, transform .18s"; el.style.opacity="0"; el.style.transform="translateY(4px)"; setTimeout(()=> el.remove(), 180);
+          });
+          const hIdx2 = history.findIndex(h=>h.pairId===pairIdToRemove);
+          if(hIdx2!==-1){ history.splice(hIdx2,1); persistHistory(); }
+        }
+        persistProjects(); renderProjectsBar(); renderProjectsList(); renderHistory();
+        if (!thread.querySelector(".message") && hero) hero.style.display="";
+        showToast("Asset deleted.");
+        return true;
+      }
     }
     return false;
   }
@@ -663,6 +702,112 @@
     projectsBackdrop.hidden=true;
     projectsToggle?.setAttribute("aria-expanded","false");
     document.body.style.overflow = historyPanel?.classList.contains("is-open") ? "hidden" : "";
+  }
+
+  const IDB_NAME = "ShiloWorkspaceDB";
+  const IDB_STORE = "store";
+  const IDB_PROJECTS_KEY = "projects_v1";
+  const IDB_META_KEY = "meta_v1";
+  let idbReady = null;
+  function openIDB(){
+    if (idbReady) return idbReady;
+    idbReady = new Promise((resolve, reject)=>{
+      try{
+        const req = indexedDB.open(IDB_NAME, 2);
+        req.onupgradeneeded = ()=>{
+          const db = req.result;
+          if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        };
+        req.onsuccess = ()=> resolve(req.result);
+        req.onerror = ()=> reject(req.error);
+      } catch(e){ reject(e); }
+    }).catch(()=> null);
+    return idbReady;
+  }
+  async function idbSet(key, value){
+    try{
+      const db = await openIDB();
+      if(!db) return false;
+      await new Promise((res, rej)=>{
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(value, key);
+        tx.oncomplete = ()=> res();
+        tx.onerror = ()=> rej(tx.error);
+      });
+      return true;
+    }catch{ return false; }
+  }
+  async function idbGet(key){
+    try{
+      const db = await openIDB();
+      if(!db) return null;
+      return await new Promise((res, rej)=>{
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = ()=> res(req.result ?? null);
+        req.onerror = ()=> rej(req.error);
+      });
+    }catch{ return null; }
+  }
+  async function persistProjectsDurable(){
+    const ok = await idbSet(IDB_PROJECTS_KEY, JSON.parse(JSON.stringify(projects)));
+    await idbSet(IDB_META_KEY, { activeProjectId, updatedAt: new Date().toISOString() });
+    return ok;
+  }
+  async function loadProjectsDurable(){
+    try{
+      const stored = await idbGet(IDB_PROJECTS_KEY);
+      if (Array.isArray(stored) && stored.length){
+        projects = stored;
+        const meta = await idbGet(IDB_META_KEY);
+        if (meta && meta.activeProjectId && projects.some(p=>p.id===meta.activeProjectId)){
+          activeProjectId = meta.activeProjectId;
+          localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        }
+        renderProjectsBar(); renderProjectsList(); renderHistory();
+        return true;
+      }
+    }catch{}
+    return false;
+  }
+  function deleteConversationPair(pairId){
+    if(!pairId) return;
+    const pairEls = [...thread.querySelectorAll(`[data-pair-id="${CSS.escape(pairId)}"]`)];
+    pairEls.forEach(el=>{
+      el.style.transition="opacity .22s, transform .22s";
+      el.style.opacity="0"; el.style.transform="translateY(6px) scale(0.98)";
+      setTimeout(()=> el.remove(), 220);
+    });
+    for(const proj of projects){
+      const idx = proj.assets.findIndex(a=>a.pairId===pairId);
+      if(idx!==-1){ proj.assets.splice(idx,1); proj.updatedAt=new Date().toISOString(); }
+    }
+    const hIdx = history.findIndex(h=>h.pairId===pairId);
+    if(hIdx!==-1) history.splice(hIdx,1);
+    persistProjects(); persistProjectsDurable();
+    persistHistory();
+    renderHistory(); renderProjectsBar(); renderProjectsList();
+    if (!thread.querySelector(".message")){
+      if(hero) hero.style.display="";
+    }
+    showToast("Deleted.");
+  }
+  function attachDeleteButton(el, pairId, label="Delete pair"){
+    if(!el || el.querySelector("[data-action='delete-pair']")) return;
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.dataset.action="delete-pair";
+    btn.setAttribute("aria-label", label);
+    btn.title=label;
+    btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>`;
+    btn.style.cssText=`position:absolute; top:8px; right:8px; width:28px; height:28px; border-radius:50%; border:0.5px solid rgba(255,255,255,0.09); background:rgba(0,0,0,0.42); backdrop-filter:blur(10px); color:rgba(255,255,255,0.72); display:grid; place-items:center; cursor:pointer; opacity:0; transform: scale(0.92); transition: opacity .18s, transform .18s, background .18s; z-index:2`;
+    el.style.position="relative";
+    el.appendChild(btn);
+    el.addEventListener("mouseenter", ()=>{ btn.style.opacity="1"; btn.style.transform="scale(1)"; });
+    el.addEventListener("mouseleave", ()=>{ btn.style.opacity="0"; btn.style.transform="scale(0.92)"; });
+    el.addEventListener("focusin", ()=>{ btn.style.opacity="1"; btn.style.transform="scale(1)"; });
+    btn.addEventListener("click", (e)=>{ e.stopPropagation(); if(confirm("Delete this request and its response? It won’t be used for follow-ups.")) deleteConversationPair(pairId); });
+    btn.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); btn.click(); }});
   }
 
   function initPolish(){
@@ -1508,7 +1653,9 @@
     lastReferenceForRetry = refForThis;
 
     const displayPrompt = contextUsed ? `${prompt}  ·  ↳ using previous scene` : prompt;
+    const pairId = "pair_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
     const userEl = createUserMessage(displayPrompt, refForThis, isVideo ? videoOpts : null);
+    userEl.dataset.pairId = pairId;
     if (contextUsed){
       const imgCount = refForThis && refForThis.base64 ? (1 + (refForThis.extraRefs ? refForThis.extraRefs.length : 0)) : 0;
       const ctxPill = document.createElement("div");
@@ -1519,7 +1666,10 @@
     }
     thread.appendChild(userEl);
     const assistantCard = createGeneratingCard(effectivePrompt, isVideo ? videoOpts : { aspect, res }, isVideo);
+    assistantCard.dataset.pairId = pairId;
     thread.appendChild(assistantCard);
+    attachDeleteButton(userEl, pairId, "Delete prompt + response");
+    attachDeleteButton(assistantCard, pairId, "Delete prompt + response");
     scrollToBottom();
 
     promptInput.value = "";
@@ -1550,10 +1700,11 @@
             poster: result.poster || refForThis?.dataUrl || null,
             tags: [],
             title: prompt.slice(0,60),
-            contextPrompt: contextUsed ? effectivePrompt : null
+            contextPrompt: contextUsed ? effectivePrompt : null,
+            pairId
           };
           addAssetToProject(asset);
-          addToHistory({ prompt, imageData: result.videoUrl, mime: "video/mp4", aspect, res: videoResolution, refThumb: refForThis?.dataUrl || null, type:"video", model: videoModel, duration: Number(videoDuration), audio: audioEnabled, videoUrl: result.videoUrl });
+          addToHistory({ prompt, imageData: result.videoUrl, mime: "video/mp4", aspect, res: videoResolution, refThumb: refForThis?.dataUrl || null, type:"video", model: videoModel, duration: Number(videoDuration), audio: audioEnabled, videoUrl: result.videoUrl, pairId });
           showToast(`Video ready — ${videoModel} · ${videoDuration}s`);
         }
       } else {
@@ -1572,10 +1723,11 @@
             poster: null,
             tags: [],
             title: prompt.slice(0,60),
-            contextPrompt: contextUsed ? effectivePrompt : null
+            contextPrompt: contextUsed ? effectivePrompt : null,
+            pairId
           };
           addAssetToProject(asset);
-          addToHistory({ prompt, imageData: result.dataUrl, mime: result.mime, aspect, res, refThumb: refForThis?.dataUrl || null, type:"image", model: IMAGE_MODEL });
+          addToHistory({ prompt, imageData: result.dataUrl, mime: result.mime, aspect, res, refThumb: refForThis?.dataUrl || null, type:"image", model: IMAGE_MODEL, pairId });
         }
       }
     } catch (err) {
