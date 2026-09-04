@@ -1381,23 +1381,32 @@
     const t = String(s||"").toLowerCase();
     return /\b(keep|same|still|again|previous|last|scene|character|subject|outfit|style|background|continue|from before|earlier|that cat|that dog|that person|take.*from|keep.*in|use previous|same cat|same dog|same person|as before)\b/i.test(t);
   }
-  function getLastImageAsset(){
+  function getLastImageAssets(n=5){
+    const out=[];
     const proj = getActiveProject();
     if (proj){
-      for(let i=0;i<proj.assets.length;i++){
+      for(let i=0;i<proj.assets.length && out.length<n;i++){
         const a=proj.assets[i];
-        if(a && a.type==="image" && a.mediaUrl) return a;
+        if(a && a.type==="image" && a.mediaUrl) out.push(a);
       }
     }
-    for(let i=history.length-1;i>=0;i--){
-      const h=history[i];
-      if(h && h.imageData) return { mediaUrl: h.imageData, prompt: h.prompt, title: h.prompt };
+    if (out.length<n){
+      for(let i=history.length-1;i>=0 && out.length<n;i--){
+        const h=history[i];
+        if(h && h.imageData) out.push({ mediaUrl: h.imageData, prompt: h.prompt, title: h.prompt });
+      }
     }
-    const lastCard = [...thread.querySelectorAll(".gen-card img")].pop();
-    if(lastCard && lastCard.src) return { mediaUrl: lastCard.src };
-    return null;
+    if (!out.length){
+      const cards=[...thread.querySelectorAll(".gen-card img")].reverse();
+      for(const c of cards){
+        if(c && c.src && out.length<n) out.push({ mediaUrl: c.src });
+        if(out.length>=n) break;
+      }
+    }
+    return out;
   }
-  function getRecentContextPrompts(limit=3){
+  function getLastImageAsset(){ const arr=getLastImageAssets(1); return arr[0]||null; }
+  function getRecentContextPrompts(limit=5){
     const out=[];
     const proj=getActiveProject();
     if(proj && proj.assets.length){
@@ -1414,8 +1423,8 @@
   }
   function buildContextPrompt(current, recents){
     if(!recents || !recents.length) return current;
-    const recentStr = recents.slice(0,2).map((p,i)=>`Scene ${recents.length-i}: ${p.slice(0,120)}`).join(" | ");
-    if (isFollowUpPrompt(current)) return `${recentStr}\n\nFollow-up instruction: ${current}\nKeep consistent subject/style from above unless told otherwise.`;
+    const recentStr = recents.slice(0,5).map((p,i)=>`Scene ${recents.length-i}: ${p.slice(0,120)}`).join(" | ");
+    if (isFollowUpPrompt(current)) return `${recentStr}\n\nFollow-up instruction: ${current}\nKeep consistent subject/style from above unless told otherwise. Refer to the last ${Math.min(5, recents.length)} scenes.`;
     return current;
   }
   function refFromAsset(asset){
@@ -1426,6 +1435,15 @@
       if(m) return { base64: m[2], mime: m[1], dataUrl: url, name: asset.title||"previous", size: (m[2].length*3/4), sizeLabel: "" };
     }
     return null;
+  }
+  function refsFromAssets(assets){
+    const out=[];
+    for(const a of assets){
+      const r=refFromAsset(a);
+      if(r) out.push(r);
+      if(out.length>=5) break;
+    }
+    return out.length?out:null;
   }
 
   async function submitPrompt() {
@@ -1459,12 +1477,13 @@
     let refForThis = reference ? { ...reference } : null;
     let effectivePrompt = prompt;
     let contextUsed = false;
-    const recents = getRecentContextPrompts(2);
+    const recents = getRecentContextPrompts(5);
     if (!refForThis && isFollowUpPrompt(prompt)){
-      const lastAsset = getLastImageAsset();
-      const maybeRef = refFromAsset(lastAsset);
-      if (maybeRef){
-        refForThis = maybeRef;
+      const lastAssets = getLastImageAssets(5);
+      const maybeRefs = refsFromAssets(lastAssets);
+      if (maybeRefs && maybeRefs.length){
+        refForThis = maybeRefs[0];
+        if (maybeRefs.length>1) refForThis.extraRefs = maybeRefs.slice(1);
         contextUsed = true;
       }
     }
@@ -1486,10 +1505,12 @@
 
     const displayPrompt = contextUsed ? `${prompt}  ·  ↳ using previous scene` : prompt;
     const userEl = createUserMessage(displayPrompt, refForThis, isVideo ? videoOpts : null);
-    if (contextUsed && refForThis){
+    if (contextUsed){
+      const imgCount = refForThis && refForThis.base64 ? (1 + (refForThis.extraRefs ? refForThis.extraRefs.length : 0)) : 0;
       const ctxPill = document.createElement("div");
       ctxPill.className = "msg-meta";
-      ctxPill.innerHTML = `<span class="meta-pill" style="background:rgba(232,217,184,0.09); border-color:rgba(232,217,184,0.14); color: var(--champagne)">↳ Follow-up: using previous image + last ${recents.length} prompts as context</span>`;
+      const imgText = imgCount ? `last ${imgCount} image${imgCount>1?'s':''} + ` : "";
+      ctxPill.innerHTML = `<span class="meta-pill" style="background:rgba(232,217,184,0.09); border-color:rgba(232,217,184,0.14); color: var(--champagne)">↳ Follow-up: using ${imgText}last ${recents.length} prompts as context</span>`;
       userEl.appendChild(ctxPill);
     }
     thread.appendChild(userEl);
@@ -2032,11 +2053,21 @@
     };
 
     if (ref && ref.base64) {
-      const dataUrl = ref.dataUrl || `data:${ref.mime || "image/png"};base64,${ref.base64}`;
-      body.image = dataUrl;
-      body.reference_image = dataUrl;
-      body.input_image = dataUrl;
-      body.images = [dataUrl];
+      const urls = [];
+      const firstUrl = ref.dataUrl || `data:${ref.mime || "image/png"};base64,${ref.base64}`;
+      urls.push(firstUrl);
+      if (ref.extraRefs && Array.isArray(ref.extraRefs)){
+        for(const er of ref.extraRefs){
+          if(er && er.dataUrl) urls.push(er.dataUrl);
+          else if(er && er.base64) urls.push(`data:${er.mime||"image/png"};base64,${er.base64}`);
+          if(urls.length>=5) break;
+        }
+      }
+      body.image = urls[0];
+      body.reference_image = urls[0];
+      body.input_image = urls[0];
+      body.images = urls;
+      if (urls.length>1) body.reference_images = urls;
     }
 
     body.aspect_ratio = aspect;
@@ -2161,12 +2192,27 @@
     if (opts.audio != null) body.audio = !!opts.audio;
 
     if (ref && ref.base64){
-      const dataUrl = ref.dataUrl || `data:${ref.mime||"image/png"};base64,${ref.base64}`;
+      const urls=[];
+      const firstUrl = ref.dataUrl || `data:${ref.mime||"image/png"};base64,${ref.base64}`;
+      urls.push(firstUrl);
+      if (ref.extraRefs && Array.isArray(ref.extraRefs)){
+        for(const er of ref.extraRefs){
+          if(er && er.dataUrl) urls.push(er.dataUrl);
+          else if(er && er.base64) urls.push(`data:${er.mime||"image/png"};base64,${er.base64}`);
+          if(urls.length>=5) break;
+        }
+      }
+      const dataUrl = urls[0];
       body.image = dataUrl;
       body.image_base64 = ref.base64;
       body.input_image = dataUrl;
       body.reference_image = dataUrl;
       body.imageBase64 = ref.base64;
+      if (urls.length>1){
+        body.images = urls;
+        body.refer_images = urls;
+        body.reference_images = urls;
+      }
     }
     body.n = 1;
 
