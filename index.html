@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0A0A0B" />
+  <meta name="description" content="Shilo Workspace — Premium image studio powered by Nano Banana Pro via Oxyy" />
+  <title>Shilo Workspace — Nano Banana Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- App shell -->
+  <div class="app" id="app">
+    <!-- Top bar -->
+    <header class="topbar" role="banner">
+      <div class="topbar-inner">
+        <a class="brand" href="#" aria-label="Shilo Workspace — home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-type">Shilo Workspace</span>
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span class="brand-sub">Nano Banana Pro</span>
+        </a>
+        <nav class="topbar-actions" aria-label="Workspace actions">
+          <div class="key-indicator" id="keyIndicator" role="status" aria-live="polite" aria-label="API key status">
+            <span class="key-indicator-label">Keys</span>
+            <span class="key-dots" id="keyDots" aria-hidden="true"></span>
+            <span class="key-indicator-text" id="keyIndicatorText">5 ready</span>
+          </div>
+          <div class="topbar-divider" aria-hidden="true"></div>
+          <button class="icon-btn" id="historyToggle" type="button" aria-label="Open history" aria-expanded="false" aria-controls="historyPanel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v6l4 2"/></svg>
+            <span class="hide-mobile">History</span>
+            <span class="history-count" id="historyCount" aria-hidden="true" hidden>0</span>
+          </button>
+          <button class="icon-btn icon-btn--ghost" id="clearBtn" type="button" aria-label="Clear conversation">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Workspace -->
+    <main class="workspace" id="workspace" role="main">
+      <div class="conversation" id="conversation" aria-live="polite" aria-label="Conversation">
+        <!-- Hero -->
+        <section class="hero" id="hero" aria-label="Welcome">
+          <div class="hero-eyebrow">
+            <span class="eyebrow-dot" aria-hidden="true"></span>
+            Nano Banana Pro · 60 credits/image · Oxyy
+          </div>
+          <h1 class="hero-title" aria-label="Hello, Shilo.">
+            <span class="hero-title-line hero-title-line-1">Hello, Shilo.</span>
+          </h1>
+          <p class="hero-subtitle">What are we creating today?</p>
+          <div class="hero-suggestions" id="heroSuggestions" role="group" aria-label="Try a prompt">
+            <button class="suggestion" type="button" data-prompt="A serene Japanese tea house at dawn, soft mist over a koi pond, muted film grain, ultra-detailed, natural light">Tea house at dawn — mist &amp; koi</button>
+            <button class="suggestion" type="button" data-prompt="Minimalist product shot of a matte black ceramic vase on a limestone plinth, studio lighting, soft shadow, 8k detail">Matte vase — studio plinth</button>
+            <button class="suggestion" type="button" data-prompt="Editorial portrait of a woman in a cream cashmere coat, overcast Paris street, shallow depth of field, cinematic">Cashmere portrait — Paris</button>
+            <button class="suggestion" type="button" data-prompt="Futuristic brutalist library interior, warm wood and concrete, volumetric light through tall windows, serene">Brutalist library — light</button>
+          </div>
+          <p class="hero-hint">Drop an image, paste from clipboard, or start typing below.</p>
+        </section>
+
+        <!-- Messages mount here -->
+        <div class="thread" id="thread" role="log" aria-label="Generation thread"></div>
+      </div>
+
+      <!-- Composer -->
+      <div class="composer-dock" id="composerDock">
+        <div class="composer-shell" id="composerShell">
+          <!-- Reference preview -->
+          <div class="ref-preview" id="refPreview" hidden>
+            <div class="ref-preview-inner">
+              <img id="refPreviewImg" alt="Reference preview" />
+              <div class="ref-preview-meta">
+                <span id="refPreviewName">reference.jpg</span>
+                <span id="refPreviewSize">—</span>
+              </div>
+              <button class="ref-remove" id="refRemove" type="button" aria-label="Remove reference image">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <form class="composer" id="composerForm" aria-label="Image generation composer">
+            <div class="composer-top">
+              <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/jpg" hidden tabindex="-1" />
+              <button class="attach-btn" id="attachBtn" type="button" aria-label="Attach reference image">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-12 7.7L4 14a4 4 0 0 1 5.7-5.7l8 8a2 2 0 0 1-2.8 2.8l-7-7"/></svg>
+              </button>
+
+              <div class="prompt-wrap">
+                <textarea
+                  id="promptInput"
+                  class="prompt-input"
+                  rows="1"
+                  placeholder="Describe what you want to create…"
+                  aria-label="Image prompt"
+                  autocomplete="off"
+                  spellcheck="true"
+                ></textarea>
+                <span class="prompt-placeholder" aria-hidden="true" id="promptPlaceholder"></span>
+              </div>
+
+              <button class="generate-btn" id="generateBtn" type="submit" aria-label="Generate image">
+                <span class="generate-btn-label">Generate</span>
+                <span class="generate-btn-icon" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </span>
+                <span class="generate-btn-shortcut" aria-hidden="true">↵</span>
+              </button>
+            </div>
+
+            <div class="composer-controls" role="group" aria-label="Generation settings">
+              <div class="control-group" aria-label="Aspect ratio">
+                <span class="control-label">Ratio</span>
+                <div class="pill-row" id="ratioRow" role="radiogroup" aria-label="Aspect ratio">
+                  <!-- filled by JS -->
+                </div>
+              </div>
+              <div class="control-divider" aria-hidden="true"></div>
+              <div class="control-group" aria-label="Resolution">
+                <span class="control-label">Resolution</span>
+                <div class="pill-row" id="resRow" role="radiogroup" aria-label="Resolution">
+                  <button type="button" class="pill" data-res="1K" role="radio" aria-checked="true">1K</button>
+                  <button type="button" class="pill" data-res="2K" role="radio" aria-checked="false">2K</button>
+                  <button type="button" class="pill" data-res="4K" role="radio" aria-checked="false">4K</button>
+                </div>
+              </div>
+              <div class="composer-meta">
+                <span class="composer-hint"><kbd>↵</kbd> generate · <kbd>⇧↵</kbd> newline</span>
+              </div>
+            </div>
+          </form>
+          <p class="composer-footnote">Images via Oxyy · <strong style="color:rgba(255,255,255,0.52); font-weight:600">Nano Banana Pro</strong> · 60 credits/image · Keys stay in your browser</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- History panel -->
+    <aside class="history-panel" id="historyPanel" aria-label="History" aria-hidden="true" inert>
+      <div class="history-head">
+        <h2 class="history-title">History</h2>
+        <div class="history-actions">
+          <span class="history-subtitle" id="historySubtitle">Local only</span>
+          <button class="icon-btn icon-btn--small" id="historyClose" type="button" aria-label="Close history">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="history-tools">
+        <button class="text-btn" id="exportHistory" type="button">Export</button>
+        <button class="text-btn text-btn--danger" id="clearHistory" type="button">Clear all</button>
+      </div>
+      <div class="history-grid" id="historyGrid" role="list" aria-label="Generated images"></div>
+      <p class="history-empty" id="historyEmpty">No generations yet. Your images will appear here.</p>
+    </aside>
+    <div class="history-backdrop" id="historyBackdrop" hidden></div>
+
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Image viewer">
+      <div class="lightbox-backdrop" id="lightboxBackdrop"></div>
+      <div class="lightbox-inner" role="document">
+        <div class="lightbox-bar">
+          <span class="lightbox-caption" id="lightboxCaption"></span>
+          <div class="lightbox-actions">
+            <button class="lightbox-btn" id="lightboxDownload" type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v14"/><path d="M7 12 12 17 17 12"/><path d="M3 17v3h18v-3"/></svg>
+              Download
+            </button>
+            <button class="lightbox-btn lightbox-btn--icon" id="lightboxClose" type="button" aria-label="Close viewer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <img class="lightbox-img" id="lightboxImg" alt="" />
+      </div>
+    </div>
+
+    <!-- Drag overlay -->
+    <div class="drag-overlay" id="dragOverlay" aria-hidden="true">
+      <div class="drag-card">
+        <div class="drag-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 13v6"/><path d="M9 16h6"/></svg>
+        </div>
+        <p class="drag-title">Drop image to use as reference</p>
+        <p class="drag-subtitle">PNG, JPEG or WebP</p>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
