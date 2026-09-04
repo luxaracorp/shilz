@@ -1377,9 +1377,61 @@
     return (n/1024/1024).toFixed(1).replace(/\.0$/,"") + " MB";
   }
 
+  function isFollowUpPrompt(s){
+    const t = String(s||"").toLowerCase();
+    return /\b(keep|same|still|again|previous|last|scene|character|subject|outfit|style|background|continue|from before|earlier|that cat|that dog|that person|take.*from|keep.*in|use previous|same cat|same dog|same person|as before)\b/i.test(t);
+  }
+  function getLastImageAsset(){
+    const proj = getActiveProject();
+    if (proj){
+      for(let i=0;i<proj.assets.length;i++){
+        const a=proj.assets[i];
+        if(a && a.type==="image" && a.mediaUrl) return a;
+      }
+    }
+    for(let i=history.length-1;i>=0;i--){
+      const h=history[i];
+      if(h && h.imageData) return { mediaUrl: h.imageData, prompt: h.prompt, title: h.prompt };
+    }
+    const lastCard = [...thread.querySelectorAll(".gen-card img")].pop();
+    if(lastCard && lastCard.src) return { mediaUrl: lastCard.src };
+    return null;
+  }
+  function getRecentContextPrompts(limit=3){
+    const out=[];
+    const proj=getActiveProject();
+    if(proj && proj.assets.length){
+      for(let i=0;i<Math.min(limit, proj.assets.length); i++){
+        const a=proj.assets[i];
+        if(a && a.prompt) out.push(a.prompt);
+      }
+    } else if(history.length){
+      for(let i=Math.max(0, history.length-limit); i<history.length; i++){
+        if(history[i]?.prompt) out.push(history[i].prompt);
+      }
+    }
+    return out;
+  }
+  function buildContextPrompt(current, recents){
+    if(!recents || !recents.length) return current;
+    const recentStr = recents.slice(0,2).map((p,i)=>`Scene ${recents.length-i}: ${p.slice(0,120)}`).join(" | ");
+    if (isFollowUpPrompt(current)) return `${recentStr}\n\nFollow-up instruction: ${current}\nKeep consistent subject/style from above unless told otherwise.`;
+    return current;
+  }
+  function refFromAsset(asset){
+    if(!asset || !asset.mediaUrl) return null;
+    const url = asset.mediaUrl;
+    if(url.startsWith("data:")){
+      const m = url.match(/^data:([^;]+);base64,(.*)$/);
+      if(m) return { base64: m[2], mime: m[1], dataUrl: url, name: asset.title||"previous", size: (m[2].length*3/4), sizeLabel: "" };
+    }
+    return null;
+  }
+
   async function submitPrompt() {
     if (isGenerating) return;
-    const prompt = promptInput.value.trim();
+    const rawPrompt = promptInput.value.trim();
+    const prompt = rawPrompt;
     if (!prompt) {
       promptInput.focus();
       composerShell.animate?.([
@@ -1404,7 +1456,22 @@
 
     const aspect = aspectRatio;
     const res = mode === "video" ? videoResolution : resolution;
-    const refForThis = reference ? { ...reference } : null;
+    let refForThis = reference ? { ...reference } : null;
+    let effectivePrompt = prompt;
+    let contextUsed = false;
+    const recents = getRecentContextPrompts(2);
+    if (!refForThis && isFollowUpPrompt(prompt)){
+      const lastAsset = getLastImageAsset();
+      const maybeRef = refFromAsset(lastAsset);
+      if (maybeRef){
+        refForThis = maybeRef;
+        contextUsed = true;
+      }
+    }
+    if (recents.length && isFollowUpPrompt(prompt)){
+      effectivePrompt = buildContextPrompt(prompt, recents);
+      contextUsed = true;
+    }
 
     if (hero.style.display !== "none") {
       hero.style.display = "none";
@@ -1413,24 +1480,25 @@
     const isVideo = mode === "video";
     const videoOpts = isVideo ? { model: videoModel, duration: videoDuration, resolution: videoResolution, aspect, audio: audioEnabled } : null;
 
-    lastPrompt = prompt;
-    lastSettings = isVideo ? { mode, model: videoModel, duration: videoDuration, resolution: videoResolution, aspect, audio: audioEnabled } : { mode, aspect, res };
+    lastPrompt = effectivePrompt;
+    lastSettings = isVideo ? { mode, model: videoModel, duration: videoDuration, resolution: videoResolution, aspect, audio: audioEnabled, contextUsed } : { mode, aspect, res, contextUsed };
     lastReferenceForRetry = refForThis;
 
-    const userEl = createUserMessage(prompt, refForThis, isVideo ? videoOpts : null);
+    const displayPrompt = contextUsed ? `${prompt}  ·  ↳ using previous scene` : prompt;
+    const userEl = createUserMessage(displayPrompt, refForThis, isVideo ? videoOpts : null);
+    if (contextUsed && refForThis){
+      const ctxPill = document.createElement("div");
+      ctxPill.className = "msg-meta";
+      ctxPill.innerHTML = `<span class="meta-pill" style="background:rgba(232,217,184,0.09); border-color:rgba(232,217,184,0.14); color: var(--champagne)">↳ Follow-up: using previous image + last ${recents.length} prompts as context</span>`;
+      userEl.appendChild(ctxPill);
+    }
     thread.appendChild(userEl);
-    const assistantCard = createGeneratingCard(prompt, isVideo ? videoOpts : { aspect, res }, isVideo);
+    const assistantCard = createGeneratingCard(effectivePrompt, isVideo ? videoOpts : { aspect, res }, isVideo);
     thread.appendChild(assistantCard);
     scrollToBottom();
 
     promptInput.value = "";
     autoGrow(promptInput);
-    if (reference && (!isVideo || (isVideo && refForThis))) {
-      if (!isVideo || confirm("Keep reference for next generation?")) {} else clearReference();
-      if (!isVideo) clearReference();
-    }
-    if (isVideo && refForThis && !isVideo) {}
-    if (!isVideo) { if (reference) clearReference(); } else { if (refForThis) clearReference(); }
     if (reference) clearReference();
 
     setGenerating(true);
@@ -1440,7 +1508,7 @@
       const idempotencyKey = (crypto.randomUUID && crypto.randomUUID()) || (Date.now().toString(36)+Math.random().toString(36).slice(2));
       let result;
       if (isVideo){
-        result = await generateVideoWithFailover(prompt, refForThis, videoOpts, assistantCard, idempotencyKey);
+        result = await generateVideoWithFailover(effectivePrompt, refForThis, videoOpts, assistantCard, idempotencyKey);
         if (result) {
           finalizeCardSuccessVideo(assistantCard, result, prompt, videoOpts);
           const asset = {
@@ -1456,14 +1524,15 @@
             mime: "video/mp4",
             poster: result.poster || refForThis?.dataUrl || null,
             tags: [],
-            title: prompt.slice(0,60)
+            title: prompt.slice(0,60),
+            contextPrompt: contextUsed ? effectivePrompt : null
           };
           addAssetToProject(asset);
           addToHistory({ prompt, imageData: result.videoUrl, mime: "video/mp4", aspect, res: videoResolution, refThumb: refForThis?.dataUrl || null, type:"video", model: videoModel, duration: Number(videoDuration), audio: audioEnabled, videoUrl: result.videoUrl });
           showToast(`Video ready — ${videoModel} · ${videoDuration}s`);
         }
       } else {
-        result = await generateWithFailover(prompt, refForThis, aspect, res, assistantCard, idempotencyKey);
+        result = await generateWithFailover(effectivePrompt, refForThis, aspect, res, assistantCard, idempotencyKey);
         if (result) {
           finalizeCardSuccess(assistantCard, result, prompt, aspect, res);
           const asset = {
@@ -1477,7 +1546,8 @@
             mime: result.mime,
             poster: null,
             tags: [],
-            title: prompt.slice(0,60)
+            title: prompt.slice(0,60),
+            contextPrompt: contextUsed ? effectivePrompt : null
           };
           addAssetToProject(asset);
           addToHistory({ prompt, imageData: result.dataUrl, mime: result.mime, aspect, res, refThumb: refForThis?.dataUrl || null, type:"image", model: IMAGE_MODEL });
