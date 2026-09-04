@@ -100,6 +100,190 @@
     if (brandSub) brandSub.textContent = DISPLAY_MODEL;
     const heroEyebrow = document.querySelector(".hero-eyebrow");
     if (heroEyebrow) heroEyebrow.innerHTML = '<span class="eyebrow-dot" aria-hidden="true"></span> ' + DISPLAY_MODEL + ' · 60 credits/image · Oxyy';
+    initPolish();
+  }
+
+  function initPolish(){
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) return;
+
+    const phRotator = (() => {
+      const prompts = [
+        "Describe what you want to create…",
+        "A brutalist library, warm wood and concrete, volumetric light…",
+        "Editorial portrait, Paris street, shallow depth of field…",
+        "Tea house at dawn, mist over koi pond…",
+        "Matte black vase on limestone plinth, studio lighting…"
+      ];
+      let idx = 0, deleting = false, txt = "", charIdx = 0;
+      let timer;
+      function tick(){
+        const full = prompts[idx];
+        if (!deleting){
+          txt = full.slice(0, charIdx + 1);
+          charIdx++;
+          if (charIdx === full.length){
+            deleting = false;
+            clearTimeout(timer);
+            timer = setTimeout(()=>{ deleting = true; tick(); }, 1600);
+            update();
+            return;
+          }
+        } else {
+          txt = full.slice(0, charIdx - 1);
+          charIdx--;
+          if (charIdx === 0){
+            deleting = false;
+            idx = (idx + 1) % prompts.length;
+          }
+        }
+        update();
+        const delay = deleting ? 28 : 34;
+        timer = setTimeout(tick, delay);
+      }
+      function update(){
+        if (document.activeElement === promptInput || promptInput.value) return;
+        promptInput.setAttribute("placeholder", txt || " ");
+      }
+      let idleTimer;
+      function schedule(){
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(tick, 2200);
+      }
+      promptInput.addEventListener("focus", () => { clearTimeout(timer); clearTimeout(idleTimer); promptInput.setAttribute("placeholder", "Describe what you want to create…"); });
+      promptInput.addEventListener("blur", schedule);
+      promptInput.addEventListener("input", () => { if (promptInput.value) { clearTimeout(timer); promptInput.setAttribute("placeholder"," "); } });
+      schedule();
+    })();
+
+    document.querySelectorAll(".suggestion").forEach(el=>{
+      el.addEventListener("pointermove", e=>{
+        const r = el.getBoundingClientRect();
+        el.style.setProperty("--mx", ((e.clientX - r.left)/r.width*100)+"%");
+      });
+    });
+
+    let raf = null;
+    const heroEl = document.querySelector(".hero");
+    const composer = document.querySelector(".composer");
+    if (heroEl && composer){
+      window.addEventListener("pointermove", e=>{
+        if (window.innerWidth < 760) return;
+        if (raf) return;
+        raf = requestAnimationFrame(()=>{
+          raf = null;
+          const cx = window.innerWidth/2, cy = window.innerHeight/2;
+          const dx = (e.clientX - cx)/cx, dy = (e.clientY - cy)/cy;
+          heroEl.style.setProperty("--px", dx.toFixed(3));
+          heroEl.style.setProperty("--py", dy.toFixed(3));
+          composer.style.transform = `translate3d(${dx*2.2}px, ${dy*1.2}px, 0)`;
+          document.body.style.setProperty("--mx", e.clientX+"px");
+          document.body.style.setProperty("--my", e.clientY+"px");
+        });
+      });
+      window.addEventListener("pointerleave", ()=>{
+        composer.style.transform = "";
+      });
+    }
+
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(ent=>{
+        if (ent.isIntersecting){
+          ent.target.style.willChange = "transform, opacity";
+          ent.target.animate?.([
+            {opacity:0, transform:"translateY(10px) scale(0.99)"},
+            {opacity:1, transform:"none"}
+          ],{duration:420, easing:"cubic-bezier(.16,1,.3,1)"});
+          io.unobserve(ent.target);
+        }
+      });
+    },{threshold:0.12});
+    const observeThread = ()=>{
+      thread.querySelectorAll(".message:not([data-observed])").forEach(m=>{
+        m.dataset.observed="1";
+        io.observe(m);
+      });
+    };
+    new MutationObserver(observeThread).observe(thread,{childList:true});
+    observeThread();
+
+    const cardiObserver = new MutationObserver(()=>{
+      thread.querySelectorAll(".gen-card:not([data-tilt])").forEach(card=>{
+        card.dataset.tilt="1";
+        const media = card.querySelector(".gen-card-media");
+        if (!media) return;
+        let bounds;
+        card.addEventListener("pointermove", e=>{
+          if (window.matchMedia("(pointer: coarse)").matches) return;
+          bounds = bounds || card.getBoundingClientRect();
+          const x = (e.clientX - bounds.left)/bounds.width - 0.5;
+          const y = (e.clientY - bounds.top)/bounds.height - 0.5;
+          card.style.transform = `perspective(900px) rotateX(${(-y*2.2).toFixed(2)}deg) rotateY(${(x*3.2).toFixed(2)}deg) translateY(-1px)`;
+          media.style.setProperty("--tx", (x*8)+"px");
+        });
+        card.addEventListener("pointerleave", ()=>{
+          card.style.transform = "";
+          bounds = null;
+        });
+        card.addEventListener("pointerenter", ()=>{ bounds = card.getBoundingClientRect(); });
+      });
+    });
+    cardiObserver.observe(thread,{childList:true, subtree:true});
+
+    const ripple = (e)=>{
+      const t = e.currentTarget;
+      if (t.disabled) return;
+      const rect = t.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      const s = document.createElement("span");
+      s.style.cssText = `position:absolute; left:${x}px; top:${y}px; width:12px; height:12px; margin:-6px; border-radius:50%; background: radial-gradient(circle, rgba(255,255,255,0.42), transparent 72%); pointer-events:none; transform:scale(0); opacity:0.9;`;
+      t.style.position = "relative"; t.style.overflow = "hidden";
+      t.appendChild(s);
+      s.animate([{transform:"scale(0)", opacity:0.9},{transform:"scale(14)", opacity:0}],{duration:520, easing:"cubic-bezier(.16,1,.3,1)"}).onfinish=()=>s.remove();
+    };
+    document.querySelectorAll(".btn, .generate-btn, .icon-btn, .pill, .suggestion").forEach(b=>{
+      b.addEventListener("click", ripple);
+    });
+
+    const countEl = document.getElementById("historyCount");
+    if (countEl){
+      const origRender = renderHistory;
+      window._renderHistoryBump = ()=>{
+        countEl.animate?.([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:320, easing:"cubic-bezier(.34,1.56,.64,1)"});
+      };
+    }
+
+    document.querySelectorAll(".topbar-actions .icon-btn, .key-indicator").forEach(el=>{
+      el.addEventListener("pointerenter", ()=>{
+        el.animate?.([{transform:"translateY(0)"},{transform:"translateY(-1px)"}],{duration:160, easing:"ease-out"});
+      });
+    });
+
+    let tick = false;
+    window.addEventListener("scroll", ()=>{
+      if (tick) return;
+      tick = true;
+      requestAnimationFrame(()=>{
+        tick = false;
+        const y = window.scrollY;
+        const topbar = document.querySelector(".topbar");
+        if (topbar){
+          const p = Math.min(y/120, 1);
+          topbar.style.setProperty("--scroll", p.toFixed(3));
+          topbar.style.background = `rgba(8,8,10,${0.72 + p*0.14})`;
+          topbar.style.backdropFilter = `blur(${18 + p*4}px) saturate(1.2)`;
+        }
+      });
+    }, {passive:true});
+
+    document.addEventListener("keydown", e=>{
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==="k"){
+        e.preventDefault();
+        promptInput.focus();
+        promptInput.select();
+        composerShell.animate?.([{transform:"scale(1)"},{transform:"scale(1.012)"},{transform:"scale(1)"}],{duration:280, easing:"cubic-bezier(.16,1,.3,1)"});
+      }
+    });
   }
 
   function renderRatioPills() {
@@ -1212,6 +1396,10 @@
       el.style.animationDelay = `${Math.min(idx*28, 220)}ms`;
       historyGrid.appendChild(el);
     });
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && history.length){
+      historyCount.animate?.([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:340, easing:"cubic-bezier(.34,1.56,.64,1)"});
+      historyGrid.animate?.([{opacity:0.96},{opacity:1}],{duration:220, easing:"ease-out"});
+    }
   }
 
   function formatTime(iso){
