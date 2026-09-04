@@ -1381,7 +1381,7 @@
     const t = String(s||"").toLowerCase();
     return /\b(keep|same|still|again|previous|last|scene|character|subject|outfit|style|background|continue|from before|earlier|that cat|that dog|that person|take.*from|keep.*in|use previous|same cat|same dog|same person|as before)\b/i.test(t);
   }
-  function getLastImageAssets(n=5){
+  function getLastImageAssets(n=50){
     const out=[];
     const proj = getActiveProject();
     if (proj){
@@ -1406,7 +1406,7 @@
     return out;
   }
   function getLastImageAsset(){ const arr=getLastImageAssets(1); return arr[0]||null; }
-  function getRecentContextPrompts(limit=5){
+  function getRecentContextPrompts(limit=50){
     const out=[];
     const proj=getActiveProject();
     if(proj && proj.assets.length){
@@ -1423,9 +1423,10 @@
   }
   function buildContextPrompt(current, recents){
     if(!recents || !recents.length) return current;
-    const recentStr = recents.slice(0,5).map((p,i)=>`Scene ${recents.length-i}: ${p.slice(0,120)}`).join(" | ");
-    if (isFollowUpPrompt(current)) return `${recentStr}\n\nFollow-up instruction: ${current}\nKeep consistent subject/style from above unless told otherwise. Refer to the last ${Math.min(5, recents.length)} scenes.`;
-    return current;
+    const recentStr = recents.map((p,i)=>`Scene ${i+1}: ${p.slice(0,100)}`).join("\n");
+    const full = `Full conversation history:\n${recentStr}\n\nCurrent instruction: ${current}\nMaintain continuity across all scenes unless told otherwise.`;
+    if (full.length > 3600) return `${recentStr.slice(0,3200)}\n\nCurrent: ${current}`;
+    return full;
   }
   function refFromAsset(asset){
     if(!asset || !asset.mediaUrl) return null;
@@ -1477,9 +1478,9 @@
     let refForThis = reference ? { ...reference } : null;
     let effectivePrompt = prompt;
     let contextUsed = false;
-    const recents = getRecentContextPrompts(5);
-    if (!refForThis && isFollowUpPrompt(prompt)){
-      const lastAssets = getLastImageAssets(5);
+    const recents = getRecentContextPrompts(50);
+    if (!refForThis){
+      const lastAssets = getLastImageAssets(10);
       const maybeRefs = refsFromAssets(lastAssets);
       if (maybeRefs && maybeRefs.length){
         refForThis = maybeRefs[0];
@@ -1487,9 +1488,12 @@
         contextUsed = true;
       }
     }
-    if (recents.length && isFollowUpPrompt(prompt)){
-      effectivePrompt = buildContextPrompt(prompt, recents);
-      contextUsed = true;
+    if (recents.length){
+      const candidate = buildContextPrompt(prompt, recents);
+      if (candidate.length <= 3800){
+        effectivePrompt = candidate;
+        contextUsed = true;
+      }
     }
 
     if (hero.style.display !== "none") {
@@ -1509,8 +1513,8 @@
       const imgCount = refForThis && refForThis.base64 ? (1 + (refForThis.extraRefs ? refForThis.extraRefs.length : 0)) : 0;
       const ctxPill = document.createElement("div");
       ctxPill.className = "msg-meta";
-      const imgText = imgCount ? `last ${imgCount} image${imgCount>1?'s':''} + ` : "";
-      ctxPill.innerHTML = `<span class="meta-pill" style="background:rgba(232,217,184,0.09); border-color:rgba(232,217,184,0.14); color: var(--champagne)">↳ Follow-up: using ${imgText}last ${recents.length} prompts as context</span>`;
+      const imgText = imgCount ? `${imgCount} image${imgCount>1?'s':''} + ` : "";
+      ctxPill.innerHTML = `<span class="meta-pill" style="background:rgba(232,217,184,0.09); border-color:rgba(232,217,184,0.14); color: var(--champagne)">↳ Full convo: ${imgText}${recents.length} prompts as context</span>`;
       userEl.appendChild(ctxPill);
     }
     thread.appendChild(userEl);
@@ -2060,7 +2064,7 @@
         for(const er of ref.extraRefs){
           if(er && er.dataUrl) urls.push(er.dataUrl);
           else if(er && er.base64) urls.push(`data:${er.mime||"image/png"};base64,${er.base64}`);
-          if(urls.length>=5) break;
+          if(urls.length>=10) break;
         }
       }
       body.image = urls[0];
@@ -2199,7 +2203,7 @@
         for(const er of ref.extraRefs){
           if(er && er.dataUrl) urls.push(er.dataUrl);
           else if(er && er.base64) urls.push(`data:${er.mime||"image/png"};base64,${er.base64}`);
-          if(urls.length>=5) break;
+          if(urls.length>=10) break;
         }
       }
       const dataUrl = urls[0];
