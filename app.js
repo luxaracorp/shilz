@@ -12,8 +12,7 @@
   const VIDEO_MODELS = [
     { id: "veo-3", label: "Veo 3", badge: "Google", audio: true },
     { id: "veo-3.1-fast", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
-    { id: "grok-imagine-video", label: "Grok Imagine", badge: "xAI", audio: true },
-    { id: "grok-imagine-video-1.5", label: "Grok 1.5", badge: "1.5", audio: true }
+    { id: "grok-imagine-video", label: "Grok Imagine", badge: "xAI", audio: true }
   ];
   const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
   const VIDEO_RESOLUTIONS = ["720p","1080p"];
@@ -2217,7 +2216,7 @@
   }
 
   async function pollVideoUntilDone(jobId, keyIdx, opts){
-    const maxWaitMs=300_000;
+    const maxWaitMs=600_000;
     const start=Date.now();
     let interval=5000;
     const keyForPoll = KEYS[keyIdx] || KEYS[0];
