@@ -2185,7 +2185,9 @@
             showToast("Video ready — polling complete.");
             return poll;
           }
-          throw { status: 500, message: poll.error || "Video generation failed.", code:"video_failed" };
+          const pollMsg = poll.error || "Video generation failed.";
+          const isUpstream = /upstream_error|generation_failed/i.test(poll.error||"") || /Something went wrong/i.test(poll.error||"");
+          throw { status: isUpstream ? 502 : 500, message: isUpstream ? `Oxyy video engine failed: ${pollMsg} — try a different prompt or model (Veo/Grok) in a minute. Image still works.` : pollMsg, rawMessage: poll.error, code: isUpstream ? "upstream_error" : "video_failed" };
         }
         throw { status: 502, message:"No video was returned. Try rephrasing or use a different model.", code:"no_video" };
       }catch(e){
@@ -2194,6 +2196,15 @@
         const isTransient=isTransientError(status, e.code);
         const isAuth=status===401||status===403;
         const isBadRequest=status===400;
+        const isUpstream = e.code==="upstream_error" || /upstream_error|generation_failed/i.test(String(e.message||""));
+        if (isUpstream){
+          keyState[keyIdx].lastFailure=Date.now(); keyState[keyIdx].failures++;
+          keyState[keyIdx].cooldownUntil=Date.now()+ 18_000;
+          busyKey=-1; updateKeyIndicator();
+          const finalUp = { status: 502, message: e.message, code: "upstream_error", rawMessage: e.rawMessage, title: "Oxyy video engine busy" };
+          finalizeCardError(card, finalUp);
+          throw finalUp;
+        }
         keyState[keyIdx].lastFailure=Date.now(); keyState[keyIdx].failures++;
         let cd=null;
         if(e.retryDelay){ const m=String(e.retryDelay).match(/(\d+)/); if(m) cd=(parseInt(m[1],10)*1000)+800; }
@@ -2211,6 +2222,10 @@
     }
     busyKey=-1; updateKeyIndicator();
     const final=normalizeFinalError(lastError, transientCount, ordered.length);
+    if (final.code==="upstream_error" || /Something went wrong|upstream/i.test(final.message||"")){
+      final.message = final.message.includes("Oxyy video engine") ? final.message : `Oxyy video engine busy: ${final.message} — image generation still works. Try Grok/Veo again in a minute.`;
+      final.title = "Oxyy video engine busy";
+    }
     finalizeCardError(card, final);
     throw final;
   }
