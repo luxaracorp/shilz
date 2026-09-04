@@ -1,4 +1,5 @@
 config.js
+.env
 .dev.vars
 .DS_Store
 Thumbs.db
