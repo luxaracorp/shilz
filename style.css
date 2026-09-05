@@ -1153,6 +1153,38 @@ body::after{
 @keyframes dragConic{ to{transform: rotate(1turn)} }
 .drag-icon{ position:relative; box-shadow: 0 8px 20px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.5) inset }
 
+/* ── 3D Atelier Depth — trigger redeploy polish ── */
+.workspace{ perspective: 1600px; transform-style: preserve-3d }
+.conversation{ transform-style: preserve-3d }
+.hero{ transform: translateZ(0); transition: transform .6s var(--ease-premium) }
+.hero:hover{ transform: translateZ(12px) }
+.composer-shell{ transform-style: preserve-3d; will-change: transform }
+.composer{
+  transform: translateZ(0) rotateX(0) rotateY(0);
+  transition: transform .45s var(--ease-premium), box-shadow .45s, border-color .22s;
+  will-change: transform;
+}
+.composer:hover{ transform: translateZ(10px) rotateX(0.6deg) rotateY(-0.6deg); box-shadow: 0 28px 64px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.08) inset }
+.gen-card{
+  transform-style: preserve-3d; will-change: transform;
+  transition: transform .42s var(--ease-premium), box-shadow .42s;
+  transform: translateZ(0);
+}
+.gen-card:hover{
+  transform: translateZ(14px) rotateX(1.2deg) rotateY(-1.8deg);
+  box-shadow: 0 22px 48px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.06) inset;
+}
+.gen-card-media{ transform: translateZ(6px); }
+.gen-card-media img, .gen-card-media video{ transform: translateZ(8px); backface-visibility: hidden }
+.projects-bar{ transform: translateZ(6px); backdrop-filter: blur(18px) saturate(1.4) }
+.topbar{ transform: translateZ(8px) }
+.mode-switch{ transform: translateZ(4px) }
+@keyframes float3d{ 0%,100%{ transform: translateZ(0) translateY(0) } 50%{ transform: translateZ(8px) translateY(-4px) } }
+.hero-ornament{ animation: float3d 7s var(--ease-inout) infinite }
+@media (prefers-reduced-motion: reduce){
+  .hero:hover, .composer:hover, .gen-card:hover{ transform:none }
+}
+
 /* ══════════════════════════════════════════════════════════
    PREMIUM ATELIER OVERHAUL — Champagne Noir
    Editorial · Warm Obsidian · Flattering Motion

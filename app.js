@@ -184,6 +184,41 @@
     initPolish();
     initMacDopamine();
     persistProjectsDurable();
+    init3D();
+  }
+  function init3D(){
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const composer = document.querySelector(".composer");
+    const shell = document.querySelector(".composer-shell");
+    if (composer && shell){
+      let raf=null;
+      shell.addEventListener("pointermove", e=>{
+        const r=shell.getBoundingClientRect();
+        const x=(e.clientX - r.left)/r.width - 0.5;
+        const y=(e.clientY - r.top)/r.height - 0.5;
+        if(raf) return;
+        raf=requestAnimationFrame(()=>{
+          raf=null;
+          composer.style.transform=`translateZ(10px) rotateX(${(-y*2.2).toFixed(2)}deg) rotateY(${(x*3).toFixed(2)}deg)`;
+        });
+      });
+      shell.addEventListener("pointerleave", ()=>{
+        composer.style.transform="";
+      });
+    }
+    const observer=new MutationObserver(()=>{
+      document.querySelectorAll(".gen-card:not([data-3d])").forEach(card=>{
+        card.dataset["3d"]="1";
+        card.addEventListener("pointermove", e=>{
+          const r=card.getBoundingClientRect();
+          const x=(e.clientX - r.left)/r.width - 0.5;
+          const y=(e.clientY - r.top)/r.height - 0.5;
+          card.style.transform=`translateZ(14px) rotateX(${(-y*3).toFixed(2)}deg) rotateY(${(x*4).toFixed(2)}deg)`;
+        });
+        card.addEventListener("pointerleave", ()=>{ card.style.transform=""; });
+      });
+    });
+    observer.observe(document.querySelector("#thread")||document.body,{childList:true,subtree:true});
   }
 
   function renderMode(){
