@@ -1,5 +1,8 @@
-const OXYY_BASE = "https://api.oxyy.ai/v1";
-const OXYY_VIDEO_URL = `${OXYY_BASE}/videos/generations`;
+const MH_BASE = "https://api.magichour.ai";
+const MH_UPLOAD_URL = `${MH_BASE}/v1/files/upload-urls`;
+const MH_TEXT_TO_VIDEO = `${MH_BASE}/v1/text-to-video`;
+const MH_IMAGE_TO_VIDEO = `${MH_BASE}/v1/image-to-video`;
+const MH_VIDEO_PROJECTS = `${MH_BASE}/v1/video-projects`;
 
 const keyCooldowns = new Map();
 let roundRobinIndex = 0;
@@ -16,7 +19,7 @@ function jsonError(message, status = 500, extra = {}) {
 }
 
 function parseKeys(env) {
-  const raw = String(env.OXY_API_KEYS || env.OXY_API_KEY || "");
+  const raw = String(env.MAGIC_HOUR_API_KEYS || env.MAGIC_HOUR_API_KEY || env.MH_API_KEYS || "");
   return raw.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
 }
 
@@ -41,7 +44,7 @@ function isPermanentValidationError(status, message) {
 
 function sanitizeMessage(msg) {
   if (!msg) return "";
-  return String(msg).replace(/oxyy-[a-z0-9]+/gi, "[key]").slice(0, 900);
+  return String(msg).replace(/mhk_live_[a-zA-Z0-9]+/gi, "[key]").slice(0, 900);
 }
 
 function pickKeyOrder(keys) {
@@ -81,10 +84,52 @@ function pruneIdempotencyCache() {
   }
 }
 
+function mapModelToMH(model) {
+  const m = String(model||"").trim().toLowerCase();
+  if (m === "grok-imagine-video" || m === "sora-2" || m === "grok" || m === "sora") return "sora-2";
+  if (m === "seedance-2.5" || m === "seedance") return "seedance-2.5";
+  if (m === "veo-3.1" || m === "veo3.1" || m === "veo-3" || m === "veo3") return "veo3.1";
+  if (m === "veo-3.1-fast" || m === "veo3.1-lite" || m === "veo-3.1-lite" ) return "veo3.1-lite";
+  return m || "sora-2";
+}
+
+async function uploadImageToMH(base64, mime, apiKey) {
+  const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime.includes("webp") ? "webp" : mime.includes("png") ? "png" : "png";
+  const uploadRes = await fetch(MH_UPLOAD_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({ items: [{ type: "image", extension: ext }] })
+  });
+  if (!uploadRes.ok) {
+    const txt = await uploadRes.text().catch(()=> "");
+    let data=null; try{ data=JSON.parse(txt); }catch{}
+    const msg = data?.message || txt || `Upload URL failed (${uploadRes.status})`;
+    throw { status: uploadRes.status, message: sanitizeMessage(msg), raw: txt, code: data?.code || "" };
+  }
+  let uploadData;
+  try{ uploadData = await uploadRes.json(); }catch{ throw { status: 502, message: "Malformed upload URL response" }; }
+  const item = uploadData?.items?.[0] || uploadData?.data?.[0];
+  const uploadUrl = item?.upload_url || item?.uploadUrl;
+  const filePath = item?.file_path || item?.filePath;
+  if (!uploadUrl || !filePath) throw { status: 502, message: "Missing upload URL from Magic Hour" };
+
+  const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "content-type": mime || "image/png" },
+    body: binary
+  });
+  if (!putRes.ok) {
+    const txt = await putRes.text().catch(()=> "");
+    throw { status: putRes.status, message: sanitizeMessage(txt) || `Image upload failed (${putRes.status})` };
+  }
+  return filePath;
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const keys = parseKeys(env || {});
-  if (!keys.length) return jsonError("Oxyy server configuration is missing. Set OXY_API_KEY or OXY_API_KEYS in Cloudflare Pages environment variables.", 503);
+  if (!keys.length) return jsonError("Magic Hour server configuration is missing. Set MAGIC_HOUR_API_KEYS in Cloudflare Pages environment variables.", 503);
 
   const idempotencyKey = request.headers.get("x-idempotency-key") || request.headers.get("X-Idempotency-Key") || "";
   if (idempotencyKey) {
@@ -113,10 +158,30 @@ export async function onRequestPost(context) {
   const prompt = body.prompt.trim();
   if (prompt.length > 4000) return jsonError("Prompt is too long. Maximum 4000 characters.", 400);
 
-  const model = body.model.trim();
-  const duration = body.duration != null ? Number(body.duration) : undefined;
-  if (duration != null && (!Number.isFinite(duration) || duration < 1 || duration > 30)) {
-    return jsonError("Duration must be between 1 and 30 seconds.", 400);
+  const rawModel = body.model.trim();
+  const model = mapModelToMH(rawModel);
+  const duration = body.duration != null ? Number(body.duration) : (body.end_seconds != null ? Number(body.end_seconds) : 4);
+  if (duration != null && (!Number.isFinite(duration) || duration < 1 || duration > 60)) {
+    return jsonError("Duration must be between 1 and 60 seconds.", 400);
+  }
+  const aspect = body.aspect_ratio || body.aspectRatio || body.aspect || "16:9";
+  const resolution = body.resolution || body.resolution === "720p" ? body.resolution : (body.resolution || "720p");
+  const resNorm = String(resolution).toLowerCase().includes("1080") ? "1080p" : String(resolution).toLowerCase().includes("720") ? "720p" : String(resolution).toLowerCase().includes("480") ? "480p" : "720p";
+
+  const hasImage = !!(body.image || body.image_base64 || body.imageBase64 || body.reference_image);
+  let imageBase64 = body.image_base64 || body.imageBase64 || null;
+  let imageMime = "image/png";
+  let imageDataUrl = body.image || body.reference_image || null;
+  if (!imageBase64 && imageDataUrl && String(imageDataUrl).startsWith("data:")){
+    const m = String(imageDataUrl).match(/^data:([^;]+);base64,(.*)$/);
+    if(m){ imageMime = m[1]; imageBase64 = m[2]; }
+  }
+  if (body.images && Array.isArray(body.images) && body.images[0] && !imageBase64){
+    const first = body.images[0];
+    if(String(first).startsWith("data:")){
+      const m = String(first).match(/^data:([^;]+);base64,(.*)$/);
+      if(m){ imageMime = m[1]; imageBase64 = m[2]; imageDataUrl = first; }
+    }
   }
 
   const order = pickKeyOrder(keys);
@@ -127,100 +192,141 @@ export async function onRequestPost(context) {
   for (let attempt = 0; attempt < order.length; attempt++) {
     const keyIdx = order[attempt];
     const key = keys[keyIdx];
-
-    let resp;
+    let filePath = null;
     try {
-      const headers = { "content-type": "application/json", "authorization": `Bearer ${key}` };
-      if (idempotencyKey) headers["x-idempotency-key"] = idempotencyKey;
-      resp = await fetch(OXYY_VIDEO_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body)
-      });
-    } catch (e) {
-      lastError = { message: "Network error reaching Oxyy. Check connectivity and try again.", code: "network", status: 0, raw: String(e) };
-      lastStatus = 0;
-      setCooldown(key, 12_000);
-      if (attempt < order.length - 1) {
-        await new Promise(r => setTimeout(r, 300 + Math.random()*300));
-        continue;
+      if (hasImage && imageBase64){
+        filePath = await uploadImageToMH(imageBase64, imageMime, key);
       }
-      break;
-    }
-
-    const retryAfterMs = getRetryAfterMs(resp.headers);
-    let respJson = null;
-    let respText = "";
-    const ct = resp.headers.get("content-type") || "";
-    try {
-      if (ct.includes("application/json")) {
-        respJson = await resp.json();
-        respText = JSON.stringify(respJson);
+      let mhBody;
+      let mhUrl;
+      const common = {
+        name: `Shilo Video - ${new Date().toISOString().slice(0,19)}`,
+        model: model,
+        end_seconds: duration,
+        aspect_ratio: String(aspect).toLowerCase(),
+        resolution: resNorm,
+      };
+      if (filePath){
+        mhUrl = MH_IMAGE_TO_VIDEO;
+        mhBody = {
+          ...common,
+          style: { prompt: prompt },
+          assets: { image_file_path: filePath }
+        };
+        if (body.audio === true) mhBody.audio = true;
+        if (body.audio === false) mhBody.audio = false;
       } else {
-        respText = await resp.text();
-        try { respJson = JSON.parse(respText); } catch {}
+        mhUrl = MH_TEXT_TO_VIDEO;
+        mhBody = {
+          ...common,
+          style: { prompt: prompt }
+        };
+        if (body.audio === true) mhBody.audio = true;
+        if (body.audio === false) mhBody.audio = false;
       }
-    } catch {
-      respText = "";
-    }
 
-    if (resp.ok) {
-      let successJson = respJson;
-      if (successJson && typeof successJson === "object") {
-        successJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model };
-      }
-      const successBody = JSON.stringify(successJson || {});
-      const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": model });
-      if (retryAfterMs) outHeaders.set("retry-after", String(Math.ceil(retryAfterMs/1000)));
-      keyCooldowns.delete(key);
-      if (idempotencyKey) {
-        idempotencyCache.set(idempotencyKey, { body: successBody, status: resp.status, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
-      }
-      return new Response(successBody, { status: resp.status, headers: outHeaders });
-    }
+      const resp = await fetch(mhUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
+        body: JSON.stringify(mhBody)
+      });
 
-    const errMsgRaw = respJson?.error?.message || respJson?.message || respText || `Request failed with ${resp.status}`;
-    const sanitized = sanitizeMessage(errMsgRaw);
-    lastError = { message: sanitized, status: resp.status, raw: respText, code: respJson?.error?.code || "" };
-    lastStatus = resp.status;
-    lastErrorBody = respText;
+      const retryAfterMs = getRetryAfterMs(resp.headers);
+      let respJson = null;
+      let respText = "";
+      const ct = resp.headers.get("content-type") || "";
+      try {
+        if (ct.includes("application/json")) {
+          respJson = await resp.json();
+          respText = JSON.stringify(respJson);
+        } else {
+          respText = await resp.text();
+          try { respJson = JSON.parse(respText); } catch {}
+        }
+      } catch { respText = ""; }
 
-    if (isPermanentValidationError(resp.status, sanitized)) {
-      const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      return new Response(JSON.stringify({ error: { message: sanitized || "Request was not accepted. Check prompt and parameters.", code: "validation_error", status: resp.status } }), { status: resp.status, headers: outHeaders });
-    }
+      if (resp.ok) {
+        let outJson = respJson;
+        if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model: rawModel, mhModel: model, filePath: filePath || null };
+        const successBody = JSON.stringify(outJson || {});
+        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": rawModel, "x-proxy-mh-model": model });
+        if (retryAfterMs) outHeaders.set("retry-after", String(Math.ceil(retryAfterMs/1000)));
+        keyCooldowns.delete(key);
+        if (idempotencyKey) {
+          idempotencyCache.set(idempotencyKey, { body: successBody, status: resp.status, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
+        }
+        return new Response(successBody, { status: resp.status, headers: outHeaders });
+      }
 
-    if (RETRYABLE_STATUSES.has(resp.status)) {
-      const baseCd = retryAfterMs ? retryAfterMs + 800 : resp.status === 429 ? 45_000 : resp.status === 402 ? 45_000 : resp.status === 500 || resp.status === 503 ? 18_000 : 12_000;
-      setCooldown(key, baseCd);
-      if (attempt < order.length - 1) {
-        const delay = retryAfterMs ? Math.min(retryAfterMs, 5000) + 400 : 420 + Math.random()*500;
-        await new Promise(r => setTimeout(r, delay));
-        continue;
+      const errMsgRaw = respJson?.message || respJson?.error?.message || respJson?.code || respText || `Request failed with ${resp.status}`;
+      const sanitized = sanitizeMessage(errMsgRaw);
+      lastError = { message: sanitized, status: resp.status, raw: respText, code: respJson?.code || "" };
+      lastStatus = resp.status;
+      lastErrorBody = respText;
+
+      if (isPermanentValidationError(resp.status, sanitized)) {
+        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        return new Response(JSON.stringify({ error: { message: sanitized || "Request was not accepted. Check prompt and parameters.", code: "validation_error", status: resp.status } }), { status: resp.status, headers: outHeaders });
       }
-    } else if (resp.status === 400) {
-      const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      return new Response(JSON.stringify({ error: { message: sanitized || "The request was not accepted. Try rephrasing.", code: "bad_request", status: 400 } }), { status: 400, headers: outHeaders });
-    } else {
-      if (attempt < order.length - 1) {
-        setCooldown(key, 12_000);
-        await new Promise(r => setTimeout(r, 300));
-        continue;
+
+      if (RETRYABLE_STATUSES.has(resp.status)) {
+        const baseCd = retryAfterMs ? retryAfterMs + 800 : resp.status === 429 ? 45_000 : resp.status === 402 ? 45_000 : resp.status === 500 || resp.status === 503 ? 18_000 : 12_000;
+        setCooldown(key, baseCd);
+        if (attempt < order.length - 1) {
+          const delay = retryAfterMs ? Math.min(retryAfterMs, 5000) + 400 : 420 + Math.random()*500;
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+      } else if (resp.status === 400) {
+        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        return new Response(JSON.stringify({ error: { message: sanitized || "The request was not accepted. Try rephrasing.", code: "bad_request", status: 400 } }), { status: 400, headers: outHeaders });
+      } else {
+        if (attempt < order.length - 1) {
+          setCooldown(key, 12_000);
+          await new Promise(r => setTimeout(r, 300));
+          continue;
+        }
       }
+    } catch (e) {
+      const status = e.status || 0;
+      const msg = e.message || "Video creation failed.";
+      const isAuth = status === 401 || status === 403;
+      const isBad = status === 400;
+      if (status === 400 && isPermanentValidationError(status, msg)){
+        return jsonError(msg, 400);
+      }
+      lastError = { message: sanitizeMessage(msg), status: status || 500, raw: e.raw || String(e), code: e.code || "" };
+      lastStatus = status || 500;
+      lastErrorBody = e.raw || "";
+      if (RETRYABLE_STATUSES.has(status) || status===0){
+        const cd = status===429 ? 45_000 : status===500||status===503 ? 18_000 : 12_000;
+        setCooldown(key, cd);
+        if (attempt < order.length - 1){
+          await new Promise(r=> setTimeout(r, 400+Math.random()*400));
+          continue;
+        }
+      } else if (isAuth || isBad){
+        setCooldown(key, 30_000);
+        if (attempt < order.length - 1){
+          await new Promise(r=> setTimeout(r, 300));
+          continue;
+        }
+      }
+      if (attempt < order.length - 1) continue;
     }
   }
 
   const finalStatus = lastStatus && lastStatus >= 400 ? lastStatus : 500;
-  let finalMsg = lastError?.message || "All Oxyy keys were tried without success. Please try again.";
+  let finalMsg = lastError?.message || "All Magic Hour keys were tried without success. Please try again.";
   finalMsg = sanitizeMessage(finalMsg);
   if (finalStatus === 429 || finalStatus === 402) {
     const hasCredit = /credit|quota|balance|limit:\s*0/i.test(lastErrorBody || finalMsg);
-    if (hasCredit) finalMsg = "Oxyy reports insufficient credits or quota. Top up at https://api.oxyy.ai";
-    else finalMsg = lastError?.message ? finalMsg : "All Oxyy keys are rate-limited. Please wait ~60s and try again.";
+    if (hasCredit) finalMsg = "Magic Hour reports insufficient credits. Check https://magichour.ai";
+    else finalMsg = lastError?.message ? finalMsg : "All Magic Hour keys are rate-limited. Please wait ~60s and try again.";
   } else if (finalStatus === 401 || finalStatus === 403) {
-    finalMsg = "Oxyy rejected the server-side credential. Check OXY_API_KEY in the Pages project settings.";
+    finalMsg = "Magic Hour rejected the server credential. Check MAGIC_HOUR_API_KEYS in Pages settings.";
   } else if (finalStatus === 0) {
-    finalMsg = "Could not reach Oxyy. Check your connection and try again.";
+    finalMsg = "Could not reach Magic Hour. Check your connection and try again.";
   }
   const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   const bodyOut = JSON.stringify({ error: { message: finalMsg, code: lastError?.code || "proxy_failed", status: finalStatus, proxy: { attempted: order.length, totalKeys: keys.length } } });
@@ -230,7 +336,7 @@ export async function onRequestPost(context) {
 export async function onRequestGet(context) {
   const { request, env, params } = context;
   const keys = parseKeys(env || {});
-  if (!keys.length) return jsonError("Oxyy server configuration is missing.", 503);
+  if (!keys.length) return jsonError("Magic Hour server configuration is missing.", 503);
 
   const url = new URL(request.url);
   const pathParts = url.pathname.split("/").filter(Boolean);
@@ -244,61 +350,65 @@ export async function onRequestGet(context) {
   for (let attempt = 0; attempt < order.length; attempt++) {
     const keyIdx = order[attempt];
     const key = keys[keyIdx];
-    try {
-      const resp = await fetch(`${OXYY_VIDEO_URL}/${encodeURIComponent(jobId)}`, {
-        method: "GET",
-        headers: { "authorization": `Bearer ${key}` }
-      });
-      const ct = resp.headers.get("content-type") || "";
-      let respJson = null;
-      let respText = "";
+    const tryUrls = [
+      `${MH_VIDEO_PROJECTS}/${encodeURIComponent(jobId)}`,
+      `${MH_TEXT_TO_VIDEO}/${encodeURIComponent(jobId)}`,
+      `${MH_IMAGE_TO_VIDEO}/${encodeURIComponent(jobId)}`
+    ];
+    for (const u of tryUrls){
       try {
-        if (ct.includes("application/json")) {
-          respJson = await resp.json();
-          respText = JSON.stringify(respJson);
-        } else {
-          respText = await resp.text();
-          try { respJson = JSON.parse(respText); } catch {}
+        const resp = await fetch(u, {
+          method: "GET",
+          headers: { "authorization": `Bearer ${key}` }
+        });
+        if (resp.status === 404) continue;
+        const ct = resp.headers.get("content-type") || "";
+        let respJson = null;
+        let respText = "";
+        try {
+          if (ct.includes("application/json")) {
+            respJson = await resp.json();
+            respText = JSON.stringify(respJson);
+          } else {
+            respText = await resp.text();
+            try { respJson = JSON.parse(respText); } catch {}
+          }
+        } catch { respText = ""; }
+
+        if (resp.ok) {
+          let outJson = respJson;
+          if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length };
+          const body = JSON.stringify(outJson || {});
+          const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length) });
+          keyCooldowns.delete(key);
+          return new Response(body, { status: resp.status, headers: outHeaders });
         }
-      } catch { respText = ""; }
 
-      if (resp.ok) {
-        let outJson = respJson;
-        if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length };
-        const body = JSON.stringify(outJson || {});
-        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length) });
-        keyCooldowns.delete(key);
-        return new Response(body, { status: resp.status, headers: outHeaders });
-      }
+        const errMsgRaw = respJson?.message || respJson?.error?.message || respText || `Request failed with ${resp.status}`;
+        const sanitized = sanitizeMessage(errMsgRaw);
+        lastError = { message: sanitized, status: resp.status, raw: respText };
+        lastStatus = resp.status;
 
-      const errMsgRaw = respJson?.error?.message || respJson?.message || respText || `Request failed with ${resp.status}`;
-      const sanitized = sanitizeMessage(errMsgRaw);
-      lastError = { message: sanitized, status: resp.status, raw: respText };
-      lastStatus = resp.status;
-
-      const shouldRetry = (RETRYABLE_STATUSES.has(resp.status) || resp.status === 404) && attempt < order.length - 1;
-      if (shouldRetry) {
-        if (resp.status !== 404){
+        if (RETRYABLE_STATUSES.has(resp.status)) {
           const ra = getRetryAfterMs(resp.headers);
           const cd = ra ? ra + 800 : resp.status === 429 ? 45_000 : 18_000;
           setCooldown(key, cd);
+          break;
         }
-        await new Promise(r => setTimeout(r, 280 + Math.random()*220));
-        continue;
+        if (resp.status !== 404){
+          const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          return new Response(JSON.stringify({ error: { message: sanitized, status: resp.status } }), { status: resp.status, headers });
+        }
+      } catch (e) {
+        lastError = { message: "Network error polling Magic Hour.", status: 0, raw: String(e) };
+        lastStatus = 0;
+        setCooldown(key, 12_000);
+        break;
       }
-      const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      if (resp.status === 404){
-        return new Response(JSON.stringify({ error: { message: "Video job not found. It may have expired or was created with a different key pool. Try generating again.", status: 404 } }), { status: 404, headers });
-      }
-      return new Response(JSON.stringify({ error: { message: sanitized, status: resp.status } }), { status: resp.status, headers });
-    } catch (e) {
-      lastError = { message: "Network error polling Oxyy.", status: 0, raw: String(e) };
-      lastStatus = 0;
-      setCooldown(key, 12_000);
-      if (attempt < order.length - 1) {
-        await new Promise(r => setTimeout(r, 300));
-        continue;
-      }
+    }
+    if (attempt < order.length - 1) {
+      await new Promise(r => setTimeout(r, 280 + Math.random()*220));
+      continue;
     }
   }
 

@@ -10,9 +10,10 @@
   const KEYS = ["proxy"];
 
   const VIDEO_MODELS = [
-    { id: "veo-3.1", label: "Veo 3", badge: "Google", audio: true },
-    { id: "veo-3.1-fast", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
-    { id: "grok-imagine-video", label: "Grok Imagine", badge: "xAI", audio: true }
+    { id: "veo3.1", label: "Veo 3", badge: "Google", audio: true },
+    { id: "veo3.1-lite", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
+    { id: "sora-2", label: "Grok Imagine", badge: "Sora 2", audio: true },
+    { id: "seedance-2.5", label: "Seedance 2.5", badge: "Seedance", audio: true }
   ];
   const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
   const VIDEO_RESOLUTIONS = ["720p","1080p"];
@@ -2520,13 +2521,13 @@
         let data=null;
         try{ data=await resp.json(); }catch{}
         const status=data?.status || data?.state || data?.data?.status || "";
-        const videoUrl=data?.video_url || data?.videoUrl || data?.url || data?.data?.video_url || data?.output?.[0]?.url;
-        if(status==="completed" || status==="succeeded" || status==="success" || videoUrl){
+        const videoUrl=data?.video_url || data?.videoUrl || data?.downloads?.[0]?.url || data?.download?.url || data?.url || data?.data?.video_url || data?.output?.[0]?.url;
+        if(status==="complete" || status==="completed" || status==="succeeded" || status==="success" || videoUrl){
           if(videoUrl) return { videoUrl, raw:data };
-          if(status==="completed") return { videoUrl: videoUrl || null, raw:data };
+          if(status==="complete" || status==="completed") return { videoUrl: videoUrl || null, raw:data };
         }
-        if(status==="failed" || status==="error" || status==="cancelled"){
-          const err=data?.error?.message || data?.message || "Video generation failed.";
+        if(status==="failed" || status==="error" || status==="cancelled" || status==="generation_failed"){
+          const err=data?.error?.message || data?.error || data?.message || "Video generation failed.";
           return { error: sanitizeApiMessage(err), videoUrl:null };
         }
       }catch(e){
