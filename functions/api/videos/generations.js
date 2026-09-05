@@ -76,10 +76,10 @@ function pruneIdempotencyCache() {
 }
 
 function mapModelToCrun(model) {
-  const m = String(model||"").toLowerCase();
-  if (m.includes("grok") || m.includes("sora") || m.includes("veo") || m.includes("seedance") || m.includes("wan")) return "wan/2-7-t2v";
   return "wan/2-7-t2v";
 }
+const CRUN_FALLBACK_MODELS = ["wan/2-7-t2v", "ltx-2.3", "wan-2.2"];
+const CRUN_FALLBACK_RESS = ["720P", "480P"];
 function mapResolutionToCrun(res){
   return "720P";
 }
@@ -158,6 +158,8 @@ export async function onRequestPost(context) {
     }
   }
 
+  const tryModels = [model, ...CRUN_FALLBACK_MODELS.filter(m=>m!==model)];
+  const tryRess = ["720P","480P"];
   const order = pickKeyOrder(keys);
   let lastError = null;
   let lastStatus = 500;
@@ -165,31 +167,80 @@ export async function onRequestPost(context) {
   for (let attempt = 0; attempt < order.length; attempt++) {
     const keyIdx = order[attempt];
     const key = keys[keyIdx];
+    let imageUrl = null;
     try {
-      let imageUrl = null;
       if (hasImage && imageBase64){
         imageUrl = await uploadToTmpFiles(imageBase64, imageMime);
       }
+      let resp = null;
+      let lastTryErr = null;
+      outerVideoTry: for (const tryModel of tryModels){
+        for (const tryRes of tryRess){
+          const input = {
+            prompt: prompt,
+            duration: Number(duration) || 4,
+            aspect_ratio: aspect,
+            resolution: tryRes
+          };
+          if (imageUrl) input.img_urls = [imageUrl];
 
-      const input = {
-        prompt: prompt,
-        duration: Number(duration) || 4,
-        aspect_ratio: aspect,
-        resolution: resolution
-      };
-      if (imageUrl){
-        if (model === "wan/2-7-t2v"){
-          input.img_urls = [imageUrl];
-        } else {
-          input.img_urls = [imageUrl];
+          const r = await fetch(CRUN_CREATE, {
+            method: "POST",
+            headers: { "content-type": "application/json", "X-API-KEY": key },
+            body: JSON.stringify({ model: tryModel, input, callback_url: "" })
+          });
+          const ctTmp = r.headers.get("content-type") || "";
+          let jTmp=null; let tTmp="";
+          try{ if(ctTmp.includes("application/json")){ jTmp=await r.json(); tTmp=JSON.stringify(jTmp);} else { tTmp=await r.text(); try{ jTmp=JSON.parse(tTmp);}catch{}} }catch{ tTmp=""; }
+          if (r.ok){
+            let outJson = jTmp;
+            const taskId = outJson?.data?.task_id || outJson?.task_id;
+            if (!taskId) throw { status: 502, message: "Missing task_id from Crun" };
+            let out = { id: taskId, task_id: taskId, status: "queued", model: rawModel, crun_model: tryModel, triedRes: tryRes, image_url: imageUrl || null };
+            out._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model: rawModel, crunModel: tryModel, triedRes };
+            const successBody = JSON.stringify(out);
+            const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": rawModel });
+            keyCooldowns.delete(key);
+            if (idempotencyKey) idempotencyCache.set(idempotencyKey, { body: successBody, status: 200, headers: Object.fromEntries(outHeaders.entries()), ts: Date.now() });
+            return new Response(successBody, { status: 200, headers: outHeaders });
+          }
+          const msgTmp = jTmp?.message || tTmp || `Request failed with ${r.status}`;
+          const isInsufficient = r.status===402 && /Insufficient Credits/i.test(msgTmp);
+          const isTier = /not available for your subscription tier|Resolution .* not available/i.test(msgTmp);
+          if (isTier || isInsufficient){
+            lastTryErr = { status: r.status, message: msgTmp, raw: tTmp, code: jTmp?.code || "" };
+            continue;
+          }
+          resp = r; 
+          // capture for outer handling
+          // store last error and break to outer retry logic
+          const retryAfterMsTmp = getRetryAfterMs(r.headers);
+          let respJsonTmp = jTmp; let respTextTmp = tTmp;
+          // fall through to outer error handling by setting resp and breaking
+          // we need to handle outer
+          lastError = { message: sanitizeMessage(msgTmp), status: r.status, raw: tTmp, code: jTmp?.code || "" };
+          lastStatus = r.status;
+          if (RETRYABLE_STATUSES.has(r.status) && attempt < order.length - 1){
+            const baseCd = retryAfterMsTmp ? retryAfterMsTmp + 800 : 18_000;
+            setCooldown(key, baseCd);
+            await new Promise(rr=> setTimeout(rr, 420+Math.random()*500));
+          }
+          break outerVideoTry;
         }
       }
-
-      const resp = await fetch(CRUN_CREATE, {
-        method: "POST",
-        headers: { "content-type": "application/json", "X-API-KEY": key },
-        body: JSON.stringify({ model, input, callback_url: "" })
-      });
+      if (lastTryErr){
+        lastError = { message: sanitizeMessage(lastTryErr.message), status: lastTryErr.status, raw: lastTryErr.raw, code: lastTryErr.code || "" };
+        lastStatus = lastTryErr.status;
+        if (attempt < order.length - 1){
+          setCooldown(key, 30_000);
+          await new Promise(r=> setTimeout(r, 400+Math.random()*400));
+          continue;
+        }
+        break;
+      }
+      // if we reach here without resp, continue to next key
+      continue;
+    } catch (e) {
 
       const retryAfterMs = getRetryAfterMs(resp.headers);
       let respJson = null;
