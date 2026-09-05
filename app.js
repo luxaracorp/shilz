@@ -10,10 +10,7 @@
   const KEYS = ["proxy"];
 
   const VIDEO_MODELS = [
-    { id: "veo3.1", label: "Veo 3", badge: "Google", audio: true },
-    { id: "veo3.1-lite", label: "Veo 3.1 Fast", badge: "Fast", audio: true },
-    { id: "sora-2", label: "Grok Imagine", badge: "Sora 2", audio: true },
-    { id: "seedance-2.5", label: "Seedance 2.5", badge: "Seedance", audio: true }
+    { id: "ltx-2.3", label: "Grok Imagine", badge: "ltx 2.3", audio: false }
   ];
   const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
   const VIDEO_RESOLUTIONS = ["720p","1080p"];
@@ -111,6 +108,7 @@
 
   let mode = localStorage.getItem("shilo_mode_v1") || "image";
   let videoModel = localStorage.getItem("shilo_video_model_v1") || VIDEO_MODELS[0].id;
+  if (!VIDEO_MODELS.some(m=>m.id===videoModel)) { videoModel = VIDEO_MODELS[0].id; try{ localStorage.setItem("shilo_video_model_v1", videoModel);}catch{} }
   let videoDuration = localStorage.getItem("shilo_video_duration_v1") || "4";
   let videoResolution = localStorage.getItem("shilo_video_res_v1") || "720p";
   let audioEnabled = localStorage.getItem("shilo_audio_v1") !== "0";

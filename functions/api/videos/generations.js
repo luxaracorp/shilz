@@ -86,11 +86,9 @@ function pruneIdempotencyCache() {
 
 function mapModelToMH(model) {
   const m = String(model||"").trim().toLowerCase();
-  if (m === "grok-imagine-video" || m === "sora-2" || m === "grok" || m === "sora") return "sora-2";
-  if (m === "seedance-2.5" || m === "seedance") return "seedance-2.5";
-  if (m === "veo-3.1" || m === "veo3.1" || m === "veo-3" || m === "veo3") return "veo3.1";
-  if (m === "veo-3.1-fast" || m === "veo3.1-lite" || m === "veo-3.1-lite" ) return "veo3.1-lite";
-  return m || "sora-2";
+  if (m === "ltx-2.3" || m === "ltx") return "ltx-2.3";
+  if (m === "sora-2" || m === "grok-imagine-video" || m === "grok" || m === "sora" || m === "seedance-2.5" || m === "seedance" || m === "veo3.1" || m === "veo-3.1" || m === "veo3.1-lite") return "ltx-2.3";
+  return "ltx-2.3";
 }
 
 async function uploadImageToMH(base64, mime, apiKey) {
