@@ -163,10 +163,9 @@ export async function onRequestPost(context) {
     return jsonError("Duration must be between 1 and 60 seconds.", 400);
   }
   const aspect = body.aspect_ratio || body.aspectRatio || body.aspect || "16:9";
-  const resolution = body.resolution || body.resolution === "720p" ? body.resolution : (body.resolution || "720p");
-  const resNorm = String(resolution).toLowerCase().includes("1080") ? "1080p" : String(resolution).toLowerCase().includes("720") ? "720p" : String(resolution).toLowerCase().includes("480") ? "480p" : "720p";
+  const resNorm = "480p";
   const tryModels = [model, ...["wan-2.2","ltx-2.3","minimax-h3"].filter(m=>m!==model)];
-  const tryResolutions = resNorm==="1080p" ? ["1080p","720p","480p"] : resNorm==="720p" ? ["720p","480p"] : [resNorm,"480p"].filter((v,i,a)=>a.indexOf(v)===i);
+  const tryResolutions = ["480p"];
 
   const hasImage = !!(body.image || body.image_base64 || body.imageBase64 || body.reference_image);
   let imageBase64 = body.image_base64 || body.imageBase64 || null;
