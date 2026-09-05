@@ -76,7 +76,12 @@ function pruneIdempotencyCache() {
 }
 
 function mapModelToCrun(model) {
+  const m = String(model||"").toLowerCase();
+  if (m.includes("grok") || m.includes("sora") || m.includes("veo") || m.includes("seedance") || m.includes("wan")) return "wan/2-7-t2v";
   return "wan/2-7-t2v";
+}
+function mapResolutionToCrun(res){
+  return "720P";
 }
 function mapResolutionToCrun(res){
   return "720P";

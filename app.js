@@ -10,7 +10,7 @@
   const KEYS = ["proxy"];
 
   const VIDEO_MODELS = [
-    { id: "ltx-2.3", label: "Grok Imagine", badge: "ltx 2.3", audio: false }
+    { id: "veo3.1-lite", label: "Grok Imagine", badge: "veo 3.1 lite · 720p", audio: true }
   ];
   const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
   const VIDEO_RESOLUTIONS = ["480p","720p"];
