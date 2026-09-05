@@ -13,7 +13,7 @@
     { id: "ltx-2.3", label: "Grok Imagine", badge: "ltx 2.3", audio: false }
   ];
   const IMAGE_RESOLUTIONS = ["1K","2K","4K"];
-  const VIDEO_RESOLUTIONS = ["720p","1080p"];
+  const VIDEO_RESOLUTIONS = ["480p","720p"];
   const VIDEO_DURATIONS = ["4","6","8"];
   const RATIOS = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9"];
 
@@ -110,7 +110,13 @@
   let videoModel = localStorage.getItem("shilo_video_model_v1") || VIDEO_MODELS[0].id;
   if (!VIDEO_MODELS.some(m=>m.id===videoModel)) { videoModel = VIDEO_MODELS[0].id; try{ localStorage.setItem("shilo_video_model_v1", videoModel);}catch{} }
   let videoDuration = localStorage.getItem("shilo_video_duration_v1") || "4";
-  let videoResolution = localStorage.getItem("shilo_video_res_v1") || "720p";
+  let videoResolution = localStorage.getItem("shilo_video_res_v1") || "480p";
+  if (videoResolution==="720p" || videoResolution==="1080p"){
+    try{
+      const tierTest = localStorage.getItem("shilo_video_res_tier_checked");
+      if (!tierTest) videoResolution="480p";
+    }catch{}
+  }
   let audioEnabled = localStorage.getItem("shilo_audio_v1") !== "0";
 
   const PROJECTS_KEY = "shilo_workspace_projects_v1";

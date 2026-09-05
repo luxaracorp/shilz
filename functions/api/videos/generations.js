@@ -157,7 +157,7 @@ export async function onRequestPost(context) {
   if (prompt.length > 4000) return jsonError("Prompt is too long. Maximum 4000 characters.", 400);
 
   const rawModel = body.model.trim();
-  const model = mapModelToMH(rawModel);
+  let model = mapModelToMH(rawModel);
   const duration = body.duration != null ? Number(body.duration) : (body.end_seconds != null ? Number(body.end_seconds) : 4);
   if (duration != null && (!Number.isFinite(duration) || duration < 1 || duration > 60)) {
     return jsonError("Duration must be between 1 and 60 seconds.", 400);
@@ -165,6 +165,8 @@ export async function onRequestPost(context) {
   const aspect = body.aspect_ratio || body.aspectRatio || body.aspect || "16:9";
   const resolution = body.resolution || body.resolution === "720p" ? body.resolution : (body.resolution || "720p");
   const resNorm = String(resolution).toLowerCase().includes("1080") ? "1080p" : String(resolution).toLowerCase().includes("720") ? "720p" : String(resolution).toLowerCase().includes("480") ? "480p" : "720p";
+  const tryModels = [model, ...["wan-2.2","ltx-2.3","minimax-h3"].filter(m=>m!==model)];
+  const tryResolutions = resNorm==="1080p" ? ["1080p","720p","480p"] : resNorm==="720p" ? ["720p","480p"] : [resNorm,"480p"].filter((v,i,a)=>a.indexOf(v)===i);
 
   const hasImage = !!(body.image || body.image_base64 || body.imageBase64 || body.reference_image);
   let imageBase64 = body.image_base64 || body.imageBase64 || null;
@@ -195,59 +197,81 @@ export async function onRequestPost(context) {
       if (hasImage && imageBase64){
         filePath = await uploadImageToMH(imageBase64, imageMime, key);
       }
-      let mhBody;
-      let mhUrl;
-      const common = {
-        name: `Shilo Video - ${new Date().toISOString().slice(0,19)}`,
-        model: model,
-        end_seconds: duration,
-        aspect_ratio: String(aspect).toLowerCase(),
-        resolution: resNorm,
-      };
-      if (filePath){
-        mhUrl = MH_IMAGE_TO_VIDEO;
-        mhBody = {
-          ...common,
-          style: { prompt: prompt },
-          assets: { image_file_path: filePath }
-        };
-        if (body.audio === true) mhBody.audio = true;
-        if (body.audio === false) mhBody.audio = false;
-      } else {
-        mhUrl = MH_TEXT_TO_VIDEO;
-        mhBody = {
-          ...common,
-          style: { prompt: prompt }
-        };
-        if (body.audio === true) mhBody.audio = true;
-        if (body.audio === false) mhBody.audio = false;
-      }
-
-      const resp = await fetch(mhUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
-        body: JSON.stringify(mhBody)
-      });
-
-      const retryAfterMs = getRetryAfterMs(resp.headers);
+      let resp = null;
       let respJson = null;
       let respText = "";
-      const ct = resp.headers.get("content-type") || "";
-      try {
-        if (ct.includes("application/json")) {
-          respJson = await resp.json();
-          respText = JSON.stringify(respJson);
-        } else {
-          respText = await resp.text();
-          try { respJson = JSON.parse(respText); } catch {}
+      let retryAfterMs = null;
+      let usedModel = model;
+      let usedRes = resNorm;
+      let lastTierError = null;
+      outerTry: for (const tryModel of tryModels){
+        for (const tryRes of tryResolutions){
+          const common = {
+            name: `Shilo Video - ${new Date().toISOString().slice(0,19)}`,
+            model: tryModel,
+            end_seconds: duration,
+            aspect_ratio: String(aspect).toLowerCase(),
+            resolution: tryRes,
+          };
+          let mhBody;
+          let mhUrl;
+          if (filePath){
+            mhUrl = MH_IMAGE_TO_VIDEO;
+            mhBody = {
+              ...common,
+              style: { prompt: prompt },
+              assets: { image_file_path: filePath }
+            };
+            if (body.audio === true) mhBody.audio = true;
+            if (body.audio === false) mhBody.audio = false;
+          } else {
+            mhUrl = MH_TEXT_TO_VIDEO;
+            mhBody = {
+              ...common,
+              style: { prompt: prompt }
+            };
+            if (body.audio === true) mhBody.audio = true;
+            if (body.audio === false) mhBody.audio = false;
+          }
+
+          const r = await fetch(mhUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json", "authorization": `Bearer ${key}` },
+            body: JSON.stringify(mhBody)
+          });
+          const ctTmp = r.headers.get("content-type") || "";
+          let j = null; let t = "";
+          try{
+            if (ctTmp.includes("application/json")){ j = await r.json(); t = JSON.stringify(j); }
+            else { t = await r.text(); try{ j = JSON.parse(t); }catch{} }
+          }catch{ t=""; }
+          if (r.ok){
+            resp = r; respJson = j; respText = t; usedModel = tryModel; usedRes = tryRes; retryAfterMs = getRetryAfterMs(r.headers);
+            break outerTry;
+          }
+          const errRaw = j?.message || j?.error?.message || j?.code || t || `Request failed with ${r.status}`;
+          const isTier = /not available for your subscription tier|Resolution .* not available/i.test(errRaw);
+          if (isTier){
+            lastTierError = { status: r.status, message: errRaw, raw: t, code: j?.code || "" };
+            continue;
+          }
+          resp = r; respJson = j; respText = t; usedModel = tryModel; usedRes = tryRes; retryAfterMs = getRetryAfterMs(r.headers);
+          break outerTry;
         }
-      } catch { respText = ""; }
+      }
+      if (!resp){
+        if (lastTierError){
+          const headers = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          return new Response(JSON.stringify({ error: { message: sanitizeMessage(lastTierError.message) + " — auto-tried fallback failed. Try 480p with wan-2.2/ltx-2.3.", code: "tier_not_available", status: 422 } }), { status: 422, headers });
+        }
+        throw { status: 500, message: "No response from Magic Hour" };
+      }
 
       if (resp.ok) {
         let outJson = respJson;
-        if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model: rawModel, mhModel: model, filePath: filePath || null };
+        if (outJson && typeof outJson === "object") outJson._shilo_proxy = { keyIndex: keyIdx + 1, totalKeys: keys.length, model: rawModel, mhModel: usedModel, filePath: filePath || null, usedRes };
         const successBody = JSON.stringify(outJson || {});
-        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": rawModel, "x-proxy-mh-model": model });
+        const outHeaders = new Headers({ "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-proxy-key-index": String(keyIdx + 1), "x-proxy-total-keys": String(keys.length), "x-proxy-model": rawModel, "x-proxy-mh-model": usedModel });
         if (retryAfterMs) outHeaders.set("retry-after", String(Math.ceil(retryAfterMs/1000)));
         keyCooldowns.delete(key);
         if (idempotencyKey) {
