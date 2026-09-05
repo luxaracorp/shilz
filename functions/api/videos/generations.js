@@ -289,6 +289,7 @@ export async function onRequestPost(context) {
         await new Promise(r => setTimeout(r, 300));
         continue;
       }
+      }
     } catch (e) {
       const status = e.status || 0;
       lastError = { message: sanitizeMessage(e.message||String(e)), status: status || 500, raw: e.raw || String(e) };
