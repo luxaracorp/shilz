@@ -83,9 +83,6 @@ function mapModelToCrun(model) {
 function mapResolutionToCrun(res){
   return "720P";
 }
-function mapResolutionToCrun(res){
-  return "720P";
-}
 
 async function uploadToTmpFiles(base64, mime) {
   try{
