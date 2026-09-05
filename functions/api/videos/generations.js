@@ -76,11 +76,10 @@ function pruneIdempotencyCache() {
 }
 
 function mapModelToCrun(model) {
-  const m = String(model||"").trim().toLowerCase();
-  if (m.includes("sora") || m.includes("grok")) return "openai/sora2";
-  if (m.includes("seedance")) return "bytedance/seedance2-0-t2v";
-  if (m.includes("veo") || m.includes("wan")) return "wan/2-7-t2v";
   return "wan/2-7-t2v";
+}
+function mapResolutionToCrun(res){
+  return "720P";
 }
 
 async function uploadToTmpFiles(base64, mime) {
